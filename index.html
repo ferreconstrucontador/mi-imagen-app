@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MiImagenApp · Asesoría de imagen con IA</title>
+  <meta name="description" content="Tu asesora de imagen personal con inteligencia artificial: colorimetría, visagismo, maquillaje, morfología, armario virtual y evaluador de compras.">
+  <meta name="theme-color" content="#FAF6F0">
+  <meta name="color-scheme" content="light">
+
+  <!-- PWA / móviles -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="MiImagen">
+  <meta name="application-name" content="MiImagenApp">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <header class="app-header" id="app-header">
+    <div class="header-inner">
+      <a href="#perfil" class="brand" aria-label="MiImagenApp, inicio">
+        <img src="icons/icon-192.png" alt="" width="36" height="36">
+        <span class="brand-text">
+          <strong>MiImagen<em>App</em></strong>
+          <small>Tu asesora de imagen con IA</small>
+        </span>
+      </a>
+      <div class="header-actions">
+        <span class="ai-status" id="ai-status" hidden></span>
+        <a href="#ayuda" class="icon-btn" id="btn-ayuda" aria-label="Ayuda y preguntas frecuentes" title="Ayuda y FAQ">❔</a>
+        <button class="btn btn-manual" id="btn-manual" type="button" aria-label="Abrir manual interactivo"><b>?</b> Manual</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="app-main" tabindex="-1">
+    <section class="view" id="view-perfil" data-view="perfil" aria-label="Mi perfil y 4 pilares"></section>
+    <section class="view" id="view-evaluar" data-view="evaluar" aria-label="Evaluar compra" hidden></section>
+    <section class="view" id="view-comprar" data-view="comprar" aria-label="Por comprar" hidden></section>
+    <section class="view" id="view-armario" data-view="armario" aria-label="Mi armario" hidden></section>
+    <section class="view" id="view-ajustes" data-view="ajustes" aria-label="Ajustes" hidden></section>
+    <section class="view" id="view-estilos" data-view="estilos" aria-label="Estilizador versátil" hidden></section>
+    <section class="view" id="view-ayuda" data-view="ayuda" aria-label="Ayuda" hidden></section>
+  </main>
+
+  <nav class="bottom-nav" id="bottom-nav" aria-label="Navegación principal">
+    <a href="#perfil" data-nav="perfil"><span class="nav-ico">🪞</span><span>4 Pilares</span></a>
+    <a href="#evaluar" data-nav="evaluar"><span class="nav-ico">🛍️</span><span>Evaluar</span></a>
+    <a href="#comprar" data-nav="comprar"><span class="nav-ico">🏷️</span><span>Por Comprar</span><b class="nav-badge" id="badge-comprar" hidden></b></a>
+    <a href="#armario" data-nav="armario"><span class="nav-ico">👗</span><span>Mi Armario</span></a>
+    <a href="#ajustes" data-nav="ajustes"><span class="nav-ico">⚙️</span><span>Ajustes</span></a>
+  </nav>
+
+  <div id="modal-root"></div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <noscript><p style="padding:2rem;text-align:center">MiImagenApp necesita JavaScript activado para funcionar.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

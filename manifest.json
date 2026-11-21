@@ -1,0 +1,24 @@
+{
+  "name": "MiImagenApp · Asesoría de imagen con IA",
+  "short_name": "MiImagen",
+  "description": "Asesoría de imagen personal femenina con IA: colorimetría, visagismo, maquillaje, morfología, armario virtual y evaluador de compras.",
+  "lang": "es",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF6F0",
+  "theme_color": "#FAF6F0",
+  "categories": ["lifestyle", "shopping", "beauty"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Evaluar compra", "short_name": "Evaluar", "url": "./#evaluar", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Mi Armario", "short_name": "Armario", "url": "./#armario", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
