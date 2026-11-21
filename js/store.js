@@ -1,6 +1,15 @@
-// Persistencia total en localStorage. Cada bloque vive en su propia llave
-// para que un error de cuota en un bloque no corrompa los demás.
+// Persistencia de MiImagenApp.
+//
+// · Textos, ajustes, diagnóstico y API Key → localStorage (una llave por bloque).
+// · Fotografías (selfie, cuerpo, armario, por comprar, miniaturas del historial)
+//   → IndexedDB "MiImagenDB" (ver imagedb.js).
+//
+// En memoria cada foto sigue siendo un dataURL, así las vistas no cambian. Al
+// guardar, la foto se reemplaza en localStorage por una referencia "idb:<clave>"
+// y el dataURL se escribe en IndexedDB. Al iniciar se reconstruye el estado.
+// Si IndexedDB no está disponible, las fotos se quedan en localStorage como antes.
 import { APP_NAME, DATA_VERSION, DEFAULT_MODEL, CATEGORIAS, COLORES, OCASIONES } from './constants.js';
+import * as idb from './imagedb.js';
 
 const PREFIX = 'miimagen.';
 const KEYS = {
@@ -12,6 +21,11 @@ const KEYS = {
   apiKey: PREFIX + 'apiKey',
   settings: PREFIX + 'ajustes',
 };
+const PARTES = ['profile', 'diagnostico', 'porComprar', 'armario', 'historial', 'settings', 'apiKey'];
+
+// Bloques que contienen fotos y prefijo de sus claves en IndexedDB.
+const PARTES_FOTOS = { profile: 'perfil', armario: 'armario', porComprar: 'porComprar', historial: 'historial' };
+const REF = 'idb:';
 
 const MAX_HISTORIAL = 40;
 
@@ -38,6 +52,9 @@ export const defaults = () => ({
 
 const listeners = new Set();
 
+const esFoto = (v) => typeof v === 'string' && v.startsWith('data:image');
+const fotoValida = (v) => (esFoto(v) ? v : '');
+
 function readJSON(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -46,21 +63,6 @@ function readJSON(key, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function load() {
-  const d = defaults();
-  let apiKey = '';
-  try { apiKey = localStorage.getItem(KEYS.apiKey) || ''; } catch { /* sin acceso */ }
-  return normalize({
-    profile: readJSON(KEYS.profile, d.profile),
-    diagnostico: readJSON(KEYS.diagnostico, null),
-    porComprar: readJSON(KEYS.porComprar, []),
-    armario: readJSON(KEYS.armario, []),
-    historial: readJSON(KEYS.historial, []),
-    apiKey,
-    settings: readJSON(KEYS.settings, d.settings),
-  });
 }
 
 const validIds = (lista) => new Set(lista.map((x) => x.id));
@@ -76,7 +78,7 @@ function normItem(it, origen) {
   if (!it || typeof it !== 'object') return null;
   return {
     id: String(it.id || uid()),
-    foto: typeof it.foto === 'string' ? it.foto : '',
+    foto: fotoValida(it.foto),
     nombre: String(it.nombre || 'Artículo sin nombre'),
     descripcion: String(it.descripcion || ''),
     categoria: CAT_IDS.has(it.categoria) ? it.categoria : 'joyeria',
@@ -98,39 +100,159 @@ export function normalize(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const p = { ...d.profile, ...(src.profile || {}) };
   p.estilos = Array.isArray(p.estilos) ? p.estilos.map(String) : [];
+  p.selfie = fotoValida(p.selfie);
+  p.cuerpo = fotoValida(p.cuerpo);
   const diag = src.diagnostico && typeof src.diagnostico === 'object' && src.diagnostico.data ? src.diagnostico : null;
+  // Las IDs repetidas compartirían foto en IndexedDB: les damos una nueva.
+  const unicos = (lista) => {
+    const vistos = new Set();
+    return lista.map((x) => {
+      if (vistos.has(x.id)) x = { ...x, id: uid() };
+      vistos.add(x.id);
+      return x;
+    });
+  };
   return {
     profile: p,
     diagnostico: diag,
-    porComprar: (Array.isArray(src.porComprar) ? src.porComprar : []).map((x) => normItem(x, 'evaluacion')).filter(Boolean),
-    armario: (Array.isArray(src.armario) ? src.armario : []).map((x) => normItem(x, 'inventario')).filter(Boolean),
-    historial: (Array.isArray(src.historial) ? src.historial : []).filter((h) => h && h.tipo).slice(0, MAX_HISTORIAL),
+    porComprar: unicos((Array.isArray(src.porComprar) ? src.porComprar : []).map((x) => normItem(x, 'evaluacion')).filter(Boolean)),
+    armario: unicos((Array.isArray(src.armario) ? src.armario : []).map((x) => normItem(x, 'inventario')).filter(Boolean)),
+    historial: unicos((Array.isArray(src.historial) ? src.historial : [])
+      .filter((h) => h && typeof h === 'object' && h.tipo)
+      .map((h) => ({ ...h, id: String(h.id || uid()), thumb: fotoValida(h.thumb) })))
+      .slice(0, MAX_HISTORIAL),
     apiKey: typeof src.apiKey === 'string' ? src.apiKey.trim() : '',
     settings: { ...d.settings, ...(src.settings || {}) },
   };
 }
 
-// Se carga después de declarar los catálogos que usa normalize() (evita la zona muerta temporal).
-let state = load();
+// ------------------------------------------------------------------
+// Fotos: separar (memoria → localStorage + IndexedDB) e hidratar (al revés)
+// ------------------------------------------------------------------
+
+/** Devuelve { copia, fotos } donde copia lleva referencias y fotos es Map<clave, dataURL>. */
+function separar(part, valor) {
+  const fotos = new Map();
+  const pre = PARTES_FOTOS[part];
+  const ref = (clave, v) => {
+    if (!esFoto(v)) return v && String(v).startsWith(REF) ? '' : v; // referencias huérfanas fuera
+    fotos.set(clave, v);
+    return REF + clave;
+  };
+  let copia = valor;
+  if (part === 'profile') {
+    copia = { ...valor, selfie: ref(`${pre}:selfie`, valor.selfie), cuerpo: ref(`${pre}:cuerpo`, valor.cuerpo) };
+  } else if (part === 'armario' || part === 'porComprar') {
+    copia = valor.map((it) => ({ ...it, foto: ref(`${pre}:${it.id}`, it.foto) }));
+  } else if (part === 'historial') {
+    copia = valor.map((h) => (h.thumb ? { ...h, thumb: ref(`${pre}:${h.id}`, h.thumb) } : h));
+  }
+  return { copia, fotos };
+}
+
+/** Reemplaza referencias "idb:<clave>" por el dataURL guardado. Devuelve cuántas faltaron. */
+function hidratar(part, valor, mapa) {
+  let faltan = 0;
+  const v = (x) => {
+    if (typeof x !== 'string' || !x.startsWith(REF)) return x;
+    const dato = mapa.get(x.slice(REF.length));
+    if (!dato) faltan++;
+    return dato || '';
+  };
+  if (!valor || typeof valor !== 'object') return { valor, faltan };
+  if (part === 'profile') return { valor: { ...valor, selfie: v(valor.selfie), cuerpo: v(valor.cuerpo) }, faltan };
+  if (!Array.isArray(valor)) return { valor, faltan };
+  if (part === 'historial') return { valor: valor.map((h) => (h && h.thumb ? { ...h, thumb: v(h.thumb) } : h)), faltan };
+  return { valor: valor.map((it) => (it && it.foto ? { ...it, foto: v(it.foto) } : it)), faltan };
+}
+
+// ------------------------------------------------------------------
+// Estado y persistencia
+// ------------------------------------------------------------------
+let state = defaults(); // se llena en store.iniciar()
+let usarIDB = false;
+const enIDB = new Map(); // clave → dataURL que ya está (o va a estar) en IndexedDB
+let cola = Promise.resolve(); // escrituras en IndexedDB, en orden
 
 export class QuotaError extends Error {
   constructor() {
-    super('Tu almacenamiento local está lleno. Elimina algunas fotos o artículos, o exporta un respaldo y limpia el historial.');
+    super('Tu almacenamiento está lleno. Elimina algunas fotos o artículos, o exporta un respaldo y limpia el historial.');
     this.name = 'QuotaError';
   }
 }
 
-function persist(part) {
+const esCuota = (e) => e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014);
+
+function escribirLocal(part, valor) {
   try {
-    if (part === 'apiKey') {
-      localStorage.setItem(KEYS.apiKey, state.apiKey || '');
-    } else {
-      localStorage.setItem(KEYS[part], JSON.stringify(state[part]));
-    }
+    if (part === 'apiKey') localStorage.setItem(KEYS.apiKey, valor || '');
+    else localStorage.setItem(KEYS[part], JSON.stringify(valor));
   } catch (e) {
-    if (e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)) throw new QuotaError();
+    if (esCuota(e)) throw new QuotaError();
     throw e;
   }
+}
+
+/** Diferencias entre las fotos actuales de un bloque y lo que hay en IndexedDB. */
+function diferencias(part, fotos) {
+  const pre = PARTES_FOTOS[part] + ':';
+  const poner = [];
+  const borrar = [];
+  fotos.forEach((v, k) => { if (enIDB.get(k) !== v) poner.push([k, v]); });
+  enIDB.forEach((_, k) => { if (k.startsWith(pre) && !fotos.has(k)) borrar.push([k, null]); });
+  return { poner, borrar };
+}
+
+function encolar(cambios) {
+  if (!cambios.length) return cola;
+  cambios.forEach(([k, v]) => (v === null ? enIDB.delete(k) : enIDB.set(k, v)));
+  cola = cola.then(() => idb.escribir(cambios)).catch((e) => falloIDB(e));
+  return cola;
+}
+
+/**
+ * Si IndexedDB falla al guardar, volvemos a guardar las fotos dentro de
+ * localStorage (como en versiones anteriores) para no perder ninguna.
+ */
+function falloIDB(e) {
+  console.error('MiImagenDB', e);
+  if (!usarIDB) return;
+  usarIDB = false;
+  let aviso = 'No se pudieron guardar las fotos en la base de datos del navegador; se guardaron en el almacenamiento básico.';
+  for (const part of Object.keys(PARTES_FOTOS)) {
+    try { escribirLocal(part, state[part]); } catch (err) {
+      aviso = 'No hay espacio suficiente para guardar tus fotos. Exporta un respaldo y elimina algunas fotos.';
+    }
+  }
+  document.dispatchEvent(new CustomEvent('mia:aviso-almacenamiento', { detail: aviso }));
+}
+
+/** Guardado normal (síncrono para el texto, fotos en segundo plano). */
+function persist(part) {
+  if (usarIDB && PARTES_FOTOS[part]) {
+    const { copia, fotos } = separar(part, state[part]);
+    escribirLocal(part, copia);
+    const { poner, borrar } = diferencias(part, fotos);
+    encolar([...poner, ...borrar]);
+  } else {
+    escribirLocal(part, state[part]);
+  }
+}
+
+/**
+ * Guardado seguro: primero las fotos en IndexedDB y, sólo cuando quedaron
+ * guardadas, el texto con referencias en localStorage. Se usa al migrar e importar.
+ */
+async function persistSeguro(part) {
+  if (!(usarIDB && PARTES_FOTOS[part])) { escribirLocal(part, state[part]); return 0; }
+  const { copia, fotos } = separar(part, state[part]);
+  const { poner, borrar } = diferencias(part, fotos);
+  await cola;
+  await idb.escribir(poner); // si falla, lanza y localStorage queda como estaba
+  poner.forEach(([k, v]) => enIDB.set(k, v));
+  escribirLocal(part, copia);
+  if (borrar.length) await encolar(borrar);
+  return poner.length;
 }
 
 function emit(part) {
@@ -142,8 +264,73 @@ function emit(part) {
 export const store = {
   get: () => state,
   subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+  usaIndexedDB: () => usarIDB,
 
-  /** Actualiza un bloque. Si no cabe en localStorage, revierte y lanza QuotaError. */
+  /**
+   * Carga el estado. La primera vez tras la actualización mueve a IndexedDB las
+   * fotos que estaban dentro de localStorage. Devuelve { migradas, faltantes }.
+   */
+  async iniciar() {
+    let mapa = new Map();
+    try {
+      await idb.abrir();
+      mapa = await idb.leerTodas();
+      usarIDB = true;
+    } catch (e) {
+      console.warn('IndexedDB no disponible; las fotos se quedan en localStorage.', e);
+      usarIDB = false;
+    }
+    const d = defaults();
+    const crudo = {
+      profile: readJSON(KEYS.profile, d.profile),
+      diagnostico: readJSON(KEYS.diagnostico, null),
+      porComprar: readJSON(KEYS.porComprar, []),
+      armario: readJSON(KEYS.armario, []),
+      historial: readJSON(KEYS.historial, []),
+      settings: readJSON(KEYS.settings, d.settings),
+      apiKey: '',
+    };
+    try { crudo.apiKey = localStorage.getItem(KEYS.apiKey) || ''; } catch { /* sin acceso */ }
+    let faltantes = 0;
+    Object.keys(PARTES_FOTOS).forEach((part) => {
+      const r = hidratar(part, crudo[part], mapa);
+      crudo[part] = r.valor;
+      faltantes += r.faltan;
+    });
+    state = normalize(crudo);
+    mapa.forEach((v, k) => enIDB.set(k, v));
+
+    let migradas = 0;
+    if (usarIDB) {
+      for (const part of Object.keys(PARTES_FOTOS)) {
+        let texto = '';
+        try { texto = localStorage.getItem(KEYS[part]) || ''; } catch { /* */ }
+        // Migración: el bloque todavía guarda fotos dentro de localStorage.
+        if (texto.includes('"data:image')) {
+          try {
+            migradas += await persistSeguro(part);
+          } catch (e) {
+            console.error('No se pudo migrar', part, e);
+            usarIDB = false; // seguimos como antes, sin perder nada
+            break;
+          }
+        }
+      }
+      // Limpieza de fotos huérfanas (de artículos que ya no existen).
+      if (usarIDB) {
+        const vivas = new Set();
+        Object.keys(PARTES_FOTOS).forEach((part) => separar(part, state[part]).fotos.forEach((_, k) => vivas.add(k)));
+        const huerfanas = [...enIDB.keys()].filter((k) => !vivas.has(k)).map((k) => [k, null]);
+        encolar(huerfanas);
+      }
+    }
+    return { migradas, faltantes };
+  },
+
+  /** Espera a que terminen de guardarse las fotos pendientes. */
+  esperarFotos: () => cola,
+
+  /** Actualiza un bloque. Si no cabe, revierte y lanza QuotaError. */
   set(part, value) {
     const previo = state[part];
     state = { ...state, [part]: value };
@@ -212,6 +399,10 @@ export const store = {
   },
 
   // ---------- Respaldos ----------
+  /**
+   * Las fotos viajan dentro del .json como dataURL (mismo formato que v1.0–v1.3),
+   * así un respaldo nuevo también se puede abrir en versiones anteriores.
+   */
   exportar({ incluirApiKey = false } = {}) {
     const s = state;
     return {
@@ -230,7 +421,8 @@ export const store = {
     };
   },
 
-  importar(json) {
+  /** Importa un respaldo (de cualquier versión). Primero guarda las fotos y luego el texto. */
+  async importar(json) {
     if (!json || typeof json !== 'object') throw new Error('El archivo no tiene un formato válido.');
     // Acepta el formato con envoltura { app, version, data } o el contenido directo.
     const data = json.data && typeof json.data === 'object' ? json.data : json;
@@ -239,35 +431,61 @@ export const store = {
     const n = normalize({ ...data, apiKey: data.apiKey || state.apiKey });
     const respaldo = { ...state };
     try {
-      ['profile', 'diagnostico', 'porComprar', 'armario', 'historial', 'settings', 'apiKey'].forEach((k) => {
-        state = { ...state, [k]: n[k] };
-        persist(k);
-      });
+      state = { ...state, ...Object.fromEntries(PARTES.map((k) => [k, n[k]])) };
+      for (const k of PARTES) await persistSeguro(k);
     } catch (e) {
       state = respaldo;
-      ['profile', 'diagnostico', 'porComprar', 'armario', 'historial', 'settings', 'apiKey'].forEach((k) => {
-        try { persist(k); } catch { /* mejor esfuerzo */ }
-      });
+      for (const k of PARTES) { try { await persistSeguro(k); } catch { /* mejor esfuerzo */ } }
+      if (esCuota(e) || e?.name === 'AbortError') throw new QuotaError();
       throw e;
     }
     emit('all');
     return n;
   },
 
-  borrarTodo() {
+  async borrarTodo() {
     Object.values(KEYS).forEach((k) => { try { localStorage.removeItem(k); } catch { /* */ } });
     state = defaults();
+    enIDB.clear();
+    if (usarIDB) {
+      cola = cola.then(() => idb.vaciar()).catch((e) => console.error(e));
+    }
     emit('all');
+    await cola;
   },
 
-  usoAlmacenamiento() {
-    let bytes = 0;
+  /**
+   * Información de almacenamiento para Ajustes.
+   * usado/cuota vienen de navigator.storage.estimate() (null si el navegador no lo reporta).
+   */
+  async infoAlmacenamiento() {
+    await cola; // que el cálculo incluya las fotos recién guardadas
+    let texto = 0;
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && k.startsWith(PREFIX)) bytes += k.length + (localStorage.getItem(k) || '').length; // caracteres (los navegadores limitan ~5 millones)
+        if (k && k.startsWith(PREFIX)) texto += (k.length + (localStorage.getItem(k) || '').length) * 2; // UTF-16
       }
     } catch { /* */ }
-    return bytes;
+    let fotos = 0;
+    let nFotos = 0;
+    Object.keys(PARTES_FOTOS).forEach((part) => separar(part, state[part]).fotos.forEach((v) => { nFotos++; fotos += v.length; }));
+    let usado = null;
+    let cuota = null;
+    let persistente = null;
+    try {
+      if (navigator.storage?.estimate) {
+        const est = await navigator.storage.estimate();
+        if (Number.isFinite(est.usage)) usado = est.usage;
+        if (Number.isFinite(est.quota) && est.quota > 0) cuota = est.quota;
+      }
+      if (navigator.storage?.persisted) persistente = await navigator.storage.persisted();
+    } catch { /* el navegador no lo permite */ }
+    return { usado, cuota, persistente, texto, fotos, nFotos, indexedDB: usarIDB };
+  },
+
+  /** Pide al navegador no borrar los datos automáticamente cuando falte espacio. */
+  async protegerAlmacenamiento() {
+    try { return navigator.storage?.persist ? await navigator.storage.persist() : false; } catch { return false; }
   },
 };

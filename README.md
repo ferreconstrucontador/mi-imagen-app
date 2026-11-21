@@ -13,7 +13,7 @@ Es un sitio 100 % estático (HTML + CSS + JavaScript con módulos ES, sin compil
 - **Ajustes**: API Key (campo de contraseña con botón mostrar/ocultar y validación), modelo, exportar/importar `.json`, uso del almacenamiento e instalación.
 - **? Manual**: tour guiado de 8 pasos, más una sección de Ayuda con preguntas frecuentes y 6 ejemplos prácticos.
 - **Navegación tipo app nativa**: abre en la última pestaña visitada (`miimagen.ultimaPestana`) y el botón o gesto **Atrás** del celular primero cierra el modal o el tour abierto, luego regresa del Estilizador a la pantalla de origen y, desde cualquier pestaña, vuelve a Mi Perfil antes de salir de la app (`js/historial.js` + History API).
-- Fotos comprimidas automáticamente con Canvas (máx. 800 px de ancho, JPEG 0.7). Todo se guarda en `localStorage`.
+- Fotos comprimidas automáticamente con Canvas (máx. 800 px de ancho, JPEG 0.7) y guardadas en **IndexedDB** (`MiImagenDB`). Textos, ajustes, diagnóstico y API Key se quedan en `localStorage`, donde cada foto se reemplaza por una referencia `idb:<clave>`. Al actualizar desde v1.0–v1.3, las fotos se migran solas la primera vez que se abre la app; si el navegador no permite IndexedDB, siguen en `localStorage` como antes.
 - PWA instalable en Android y iOS (manifest, iconos, service worker, uso sin conexión).
 
 ## Estructura
@@ -24,7 +24,8 @@ manifest.json       Manifiesto de la PWA
 sw.js               Service worker (caché sin conexión; nunca guarda llamadas a Gemini)
 css/styles.css      Estilos (crema, rosa empolvado, terracota, carbón y dorado)
 js/app.js           Enrutador, cabecera e instalación
-js/store.js         Persistencia en localStorage, normalización, respaldos
+js/store.js         Persistencia (localStorage + fotos en IndexedDB), migración, normalización y respaldos
+js/imagedb.js       Acceso a la base de datos de fotos MiImagenDB
 js/gemini.js        Cliente REST de Gemini y prompts
 js/image.js         Compresión de imágenes con Canvas
 js/ui.js            Componentes de interfaz (modales, toasts, selector de fotos, chips)

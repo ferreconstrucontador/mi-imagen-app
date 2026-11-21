@@ -1,6 +1,6 @@
 // Punto de entrada: enrutador con History API, estado global y registro de la PWA.
 import { store } from './store.js';
-import { $, $$, abrirModal, h } from './ui.js';
+import { $, $$, abrirModal, h, toast } from './ui.js';
 import * as hist from './historial.js';
 import * as perfil from './views/perfil.js';
 import * as evaluar from './views/evaluar.js';
@@ -213,8 +213,24 @@ function arrancar() {
   mostrar(pos.vista);
 }
 
+// Avisos de la capa de fotos (p. ej. si IndexedDB falla y se usa el respaldo).
+document.addEventListener('mia:aviso-almacenamiento', (e) => toast(e.detail, 'warn', 7000));
+
+// Carga los datos (y la primera vez mueve las fotos de localStorage a IndexedDB).
+let inicio = { migradas: 0, faltantes: 0 };
+try {
+  inicio = await store.iniciar();
+} catch (e) {
+  console.error('No se pudieron cargar los datos', e);
+}
 actualizarCabecera();
 arrancar();
+if (inicio.migradas) {
+  toast(`Tus ${inicio.migradas} foto${inicio.migradas === 1 ? '' : 's'} se movieron a un almacenamiento más amplio ✓`, 'ok', 5000);
+}
+if (inicio.faltantes) {
+  toast(`No se encontraron ${inicio.faltantes} foto${inicio.faltantes === 1 ? '' : 's'} guardada${inicio.faltantes === 1 ? '' : 's'}. Puedes volver a subirlas o importar un respaldo.`, 'warn', 8000);
+}
 
 if (!store.get().settings.tourVisto) {
   setTimeout(() => {
