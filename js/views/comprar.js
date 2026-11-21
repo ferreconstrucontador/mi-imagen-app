@@ -63,7 +63,7 @@ function card(i) {
     <div class="buy-photo">${i.foto ? `<img src="${i.foto}" alt="${esc(i.nombre)}" loading="lazy">` : `<div class="photo-ph">${colorDot(i.color, { tam: 40 })}</div>`}
       ${p ? `<span class="score-badge s-${p >= 8 ? 'alto' : p >= 6 ? 'medio' : 'bajo'}">${p}/10</span>` : ''}</div>
     <div class="buy-info">
-      <small class="eyebrow">${esc(nombreCategoria(i.categoria))}</small>
+      <small class="eyebrow">${esc(nombreCategoria(i.categoria))}${i.veredicto?.origen === 'estilizador' ? ' · 🎭 Estilizador' : ''}</small>
       <h4>${esc(i.nombre)}</h4>
       ${i.veredicto?.veredicto ? `<p class="small"><b>${esc(i.veredicto.veredicto)}</b> ${esc(i.veredicto.resumen || '').slice(0, 140)}${(i.veredicto.resumen || '').length > 140 ? '…' : ''}</p>` : ''}
       <p class="buy-meta">
@@ -73,7 +73,7 @@ function card(i) {
       </p>
       <div class="btn-row">
         <button class="btn btn-sm btn-primary" data-act="comprado">✓ Marcar como Comprado</button>
-        ${i.veredicto ? '<button class="btn btn-sm btn-soft" data-act="ver">Ver análisis</button>' : ''}
+        ${i.veredicto && i.veredicto.origen !== 'estilizador' ? '<button class="btn btn-sm btn-soft" data-act="ver">Ver análisis</button>' : ''}
         <button class="btn btn-sm btn-ghost" data-act="editar">Editar</button>
         <button class="btn btn-sm btn-ghost danger" data-act="borrar" aria-label="Eliminar">🗑️</button>
       </div>

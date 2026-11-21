@@ -71,3 +71,15 @@ export const nombreOcasion = (id) => byId(OCASIONES, id)?.nombre || id || '';
 export const nombreCategoria = (id) => byId(CATEGORIAS, id)?.nombre || id || '';
 export const nombreColor = (id) => byId(COLORES, id)?.nombre || id || '';
 export const nombreClima = (id) => byId(CLIMAS, id)?.nombre || id || '';
+
+// Estilizador Versátil: los 7 Estilos Universales.
+// `ocasion` se usa al enviar una sugerencia a "Por Comprar".
+export const ESTILOS_UNIVERSALES = [
+  { id: 'natural', nombre: 'Natural / Casual', icono: '🌿', acento: '#8A9A6B', ocasion: 'casual' },
+  { id: 'clasico', nombre: 'Clásico / Tradicional', icono: '🤍', acento: '#2F3B55', ocasion: 'oficina' },
+  { id: 'elegante', nombre: 'Elegante / Sofisticado', icono: '🥂', acento: '#B8955A', ocasion: 'coctel' },
+  { id: 'romantico', nombre: 'Romántico', icono: '🌸', acento: '#D8A7A0', ocasion: 'coctel' },
+  { id: 'seductor', nombre: 'Seductor / Glam', icono: '💋', acento: '#9E2B3A', ocasion: 'noche' },
+  { id: 'creativo', nombre: 'Creativo', icono: '🎨', acento: '#D9772F', ocasion: 'casual' },
+  { id: 'dramatico', nombre: 'Dramático / Vanguardista', icono: '🖤', acento: '#2B2B2E', ocasion: 'noche' },
+];

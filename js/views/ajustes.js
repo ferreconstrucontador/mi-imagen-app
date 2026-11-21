@@ -178,7 +178,7 @@ function pintarDatos() {
     <li><b>${s.historial.length}</b><span>Análisis</span></li>`;
 
   const hist = s.historial.slice(0, 8);
-  const tipos = { diagnostico: '🪞', compra: '🛍️', outfits: '👯‍♀️' };
+  const tipos = { diagnostico: '🪞', compra: '🛍️', outfits: '👯‍♀️', estilos: '🎭' };
   $('#historial-resumen', root).innerHTML = hist.length ? `
     <ul class="history-list compact">${hist.map((x) => `<li><span class="thumb-ph">${tipos[x.tipo] || '✨'}</span><span><b>${esc(x.titulo)}</b><small>${esc(x.resumen || '')} · ${fechaCorta(x.fecha)}</small></span>${x.puntuacion ? `<span class="mini-score">${x.puntuacion}</span>` : ''}</li>`).join('')}</ul>
     <button class="btn btn-sm btn-ghost" id="btn-limpiar-hist">Limpiar historial</button>`

@@ -1,5 +1,5 @@
 // Service Worker de MiImagenApp: funciona sin conexión (excepto el análisis con IA).
-const VERSION = 'miimagen-v1.0.0';
+const VERSION = 'miimagen-v1.1.0';
 const SHELL = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const SHELL = [
   './js/views/armario.js',
   './js/views/ajustes.js',
   './js/views/ayuda.js',
+  './js/views/estilos.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',

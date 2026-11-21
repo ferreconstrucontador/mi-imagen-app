@@ -33,7 +33,7 @@ const PASOS = [
   },
   {
     vista: 'armario', sel: '[data-tour="armario"]', titulo: 'Tu Armario Virtual 👗',
-    texto: 'Con <b>Agregar inventario inicial</b> registras lo que ya tienes: foto + categoría y Gemini detecta nombre, color y ocasiones. Filtra por 9 categorías, color y ocasión, y pide <b>3 outfits</b> para cualquier ocasión.<br><br>💾 Exporta un respaldo .json en Ajustes de vez en cuando y consulta la <a href="#ayuda">Ayuda</a> con 6 ejemplos prácticos. ¡Lista para brillar! 💖',
+    texto: 'Con <b>Agregar inventario inicial</b> registras lo que ya tienes: foto + categoría y Gemini detecta nombre, color y ocasiones. Filtra por 9 categorías, color y ocasión, y pide <b>3 outfits</b> para cualquier ocasión. Con el <b>Estilizador Versátil</b> ves una prenda en los 7 estilos universales.<br><br>💾 Exporta un respaldo .json en Ajustes de vez en cuando y consulta la <a href="#ayuda">Ayuda</a> con 6 ejemplos prácticos. ¡Lista para brillar! 💖',
   },
 ];
 

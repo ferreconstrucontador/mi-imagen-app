@@ -7,9 +7,12 @@ import * as comprar from './views/comprar.js';
 import * as armario from './views/armario.js';
 import * as ajustes from './views/ajustes.js';
 import * as ayuda from './views/ayuda.js';
+import * as estilos from './views/estilos.js';
 import { iniciarTour } from './tour.js';
 
-const VIEWS = { perfil, evaluar, comprar, armario, ajustes, ayuda };
+const VIEWS = { perfil, evaluar, comprar, armario, ajustes, ayuda, estilos };
+// Vistas secundarias que resaltan una pestaña de la barra inferior.
+const NAV_PADRE = { estilos: 'armario' };
 const montadas = new Set();
 let actual = null;
 
@@ -22,7 +25,7 @@ function mostrar(nombre) {
   if (!VIEWS[nombre]) nombre = 'perfil';
   $$('.view').forEach((v) => { v.hidden = v.dataset.view !== nombre; });
   $$('[data-nav]').forEach((a) => {
-    const activo = a.dataset.nav === nombre;
+    const activo = a.dataset.nav === (NAV_PADRE[nombre] || nombre);
     a.classList.toggle('active', activo);
     if (activo) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });

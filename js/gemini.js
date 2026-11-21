@@ -1,7 +1,7 @@
 // Conexión directa del navegador con la API REST de Google Gemini.
 import { store } from './store.js';
 import { dataUrlParts } from './image.js';
-import { DEFAULT_MODEL, CATEGORIAS, COLORES, OCASIONES, nombreClima, nombreOcasion, nombreCategoria, nombreColor } from './constants.js';
+import { DEFAULT_MODEL, CATEGORIAS, COLORES, OCASIONES, ESTILOS_UNIVERSALES, nombreClima, nombreOcasion, nombreCategoria, nombreColor } from './constants.js';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const TIMEOUT_MS = 120000;
@@ -403,4 +403,86 @@ Responde SOLO con JSON:
     porQueFunciona: o.porQueFunciona || '',
   }));
   return { outfits, faltantes: Array.isArray(r.faltantes) ? r.faltantes.map(String) : [] };
+}
+
+// ------------------------------------------------------------------
+// Estilizador Versátil: una prenda adaptada a los 7 Estilos Universales
+// ------------------------------------------------------------------
+const hexValido = (x) => /^#[0-9a-fA-F]{6}$/.test(String(x || ''));
+
+export async function explorarEstilos({ foto, nombre, categoria, color, descripcion }) {
+  const { profile, armario } = store.get();
+  const catIds = CATEGORIAS.map((c) => `${c.id} (${c.nombre})`).join(', ');
+  const colorIds = COLORES.map((c) => `${c.id} (${c.nombre})`).join(', ');
+  const estilos = ESTILOS_UNIVERSALES.map((e) => `${e.id} = ${e.nombre}`).join('; ');
+  const prompt = `${contextoPerfil()}
+
+${armarioResumen()}
+
+PRENDA BASE A ESTILIZAR:
+${foto ? '- La imagen adjunta es la prenda base.' : '- No hay foto; usa la descripción.'}
+${nombre ? `- Nombre: ${nombre}` : ''}
+${categoria ? `- Categoría: ${nombreCategoria(categoria)}` : ''}
+${color ? `- Color predominante: ${nombreColor(color)}` : ''}
+${descripcion ? `- Descripción: ${descripcion}` : ''}
+
+Eres su estilista personal. SIN LIMITARTE a lo que tiene en su armario, diseña cómo adaptar ESTA MISMA prenda a cada uno de los 7 Estilos Universales (${estilos}).
+Para cada estilo arma un look completo: prendas complementarias sugeridas libremente, calzado, accesorios, peinado y maquillaje. Respeta su colorimetría (usa colores de su paleta y evita los que no la favorecen cerca del rostro), su morfología y el clima de ${profile.ciudad || 'su ciudad'} (${nombreClima(profile.clima) || 'clima no indicado'}): telas, capas y fórmulas de maquillaje adecuadas.
+Si alguna prenda sugerida se parece mucho a algo que YA tiene en su armario, indica su id en "similarEnArmario"; si no, deja cadena vacía.
+Responde SOLO con JSON:
+{
+  "prenda": {"nombre": "nombre corto de la prenda base", "analisis": "1-2 frases sobre cómo la favorece y su versatilidad"},
+  "estilos": [
+    {
+      "id": "uno de: ${ESTILOS_UNIVERSALES.map((e) => e.id).join(', ')}",
+      "titulo": "nombre inspirador del look",
+      "esencia": "una frase con la esencia del estilo aplicado a ella",
+      "comoLlevarla": "cómo usar la prenda base en este estilo (fajada, anudada, con mangas dobladas, etc.)",
+      "prendasSugeridas": [{"nombre": "string", "categoria": "uno de: ${catIds}", "color": "uno de: ${colorIds}", "porQue": "string corto", "similarEnArmario": "id o cadena vacía"}] (2 a 4 piezas, sin contar calzado ni bolso si ya van abajo),
+      "calzado": "string",
+      "accesorios": "joyería, bolso y complementos (con el metal ideal)",
+      "peinado": "string",
+      "maquillaje": "string adaptado al clima",
+      "paleta": [3 objetos {"nombre": "string", "hex": "#RRGGBB"}],
+      "tipClima": "string corto"
+    }
+  ] (EXACTAMENTE 7, uno por estilo, en el orden indicado)
+}`;
+  const r = await generar({ prompt, imagenes: foto ? [foto] : [], temperatura: 0.8 });
+
+  const ids = new Set(armario.map((a) => a.id));
+  const cats = new Set(CATEGORIAS.map((c) => c.id));
+  const cols = new Set(COLORES.map((c) => c.id));
+  const lista = Array.isArray(r.estilos) ? r.estilos : [];
+  const porId = new Map();
+  lista.forEach((e, i) => {
+    // Si el modelo no respeta el id, usamos el orden como respaldo.
+    const id = ESTILOS_UNIVERSALES.some((x) => x.id === e?.id) ? e.id : ESTILOS_UNIVERSALES[i]?.id;
+    if (id && !porId.has(id)) porId.set(id, e);
+  });
+  return {
+    prenda: { nombre: String(r.prenda?.nombre || nombre || 'Tu prenda'), analisis: String(r.prenda?.analisis || '') },
+    estilos: ESTILOS_UNIVERSALES.filter((x) => porId.has(x.id)).map((x) => {
+      const e = porId.get(x.id) || {};
+      return {
+        id: x.id,
+        titulo: String(e.titulo || x.nombre),
+        esencia: String(e.esencia || ''),
+        comoLlevarla: String(e.comoLlevarla || ''),
+        prendasSugeridas: (Array.isArray(e.prendasSugeridas) ? e.prendasSugeridas : []).filter((p) => p && p.nombre).slice(0, 5).map((p) => ({
+          nombre: String(p.nombre),
+          categoria: cats.has(p.categoria) ? p.categoria : '',
+          color: cols.has(p.color) ? p.color : '',
+          porQue: String(p.porQue || ''),
+          similarEnArmario: ids.has(String(p.similarEnArmario)) ? String(p.similarEnArmario) : '',
+        })),
+        calzado: String(e.calzado || ''),
+        accesorios: String(e.accesorios || ''),
+        peinado: String(e.peinado || ''),
+        maquillaje: String(e.maquillaje || ''),
+        paleta: (Array.isArray(e.paleta) ? e.paleta : []).filter((c) => c && hexValido(c.hex)).slice(0, 4).map((c) => ({ nombre: String(c.nombre || ''), hex: c.hex })),
+        tipClima: String(e.tipClima || ''),
+      };
+    }),
+  };
 }

@@ -2,6 +2,7 @@
 import { store } from '../store.js';
 import { evaluarCompra } from '../gemini.js';
 import { thumbnail } from '../image.js';
+import { preseleccionarNueva } from './estilos.js';
 import { nombreOcasion, nombreCategoria } from '../constants.js';
 import {
   $, $$, h, esc, toast, mostrarError, cargando, photoPicker, chipGroup, scoreRing,
@@ -168,6 +169,7 @@ function renderResultado() {
       <div class="btn-row">
         <button class="btn btn-primary" data-a="comprar" ${resultado.agregado ? 'disabled' : ''}>${resultado.agregado ? '✓ En tu lista' : '🏷️ Agregar a Por Comprar'}</button>
         <button class="btn btn-soft" data-a="armario" ${resultado.agregado ? 'disabled' : ''}>👗 Ya lo tengo: a Mi Armario</button>
+        <button class="btn btn-soft" data-a="estilos">🎭 Verla en los 7 estilos</button>
         <button class="btn btn-ghost" data-a="nueva">Nueva evaluación</button>
       </div>
     </div>`;
@@ -197,6 +199,12 @@ function accion(a) {
     root._reset();
     renderResultado();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (a === 'estilos') {
+    const { res, form: f } = resultado;
+    preseleccionarNueva({ foto: f.foto, nombre: res.nombre || f.descripcion, categoria: res.categoria || f.categoria, descripcion: f.descripcion });
+    window.MiImagen.irA('estilos');
     return;
   }
   try {

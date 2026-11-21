@@ -37,7 +37,6 @@ export const defaults = () => ({
 });
 
 const listeners = new Set();
-let state = load();
 
 function readJSON(key, fallback) {
   try {
@@ -110,6 +109,9 @@ export function normalize(raw) {
     settings: { ...d.settings, ...(src.settings || {}) },
   };
 }
+
+// Se carga después de declarar los catálogos que usa normalize() (evita la zona muerta temporal).
+let state = load();
 
 export class QuotaError extends Error {
   constructor() {

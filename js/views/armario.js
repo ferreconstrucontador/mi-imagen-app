@@ -2,6 +2,7 @@
 import { store } from '../store.js';
 import { CATEGORIAS, COLORES, OCASIONES, nombreCategoria, nombreColor, nombreOcasion, nombreClima } from '../constants.js';
 import { detectarArticulo, generarOutfits, hayApiKey } from '../gemini.js';
+import { preseleccionar } from './estilos.js';
 import {
   $, $$, h, esc, toast, mostrarError, abrirModal, confirmar, cargando, photoPicker, chipGroup,
   selectColor, colorDot, opcionesOcasion, opcionesCategoria, fechaCorta, lista,
@@ -22,6 +23,7 @@ export function mount(el) {
     <div class="action-row" data-tour="armario">
       <button class="btn btn-primary" id="btn-inventario">＋ Agregar inventario inicial</button>
       <button class="btn btn-gold" id="btn-outfits">✨ Generar outfits</button>
+      <a class="btn btn-soft span-all" href="#estilos">🎭 Estilizador Versátil: explora una prenda en 7 estilos</a>
     </div>
     <div class="cat-tabs" id="cat-tabs" role="tablist"></div>
     <div class="filters">
@@ -142,6 +144,7 @@ function detalle(id) {
     </div>
     <label class="field-label">Color predominante</label><div id="d-color"></div>
     <label class="field-label">Ocasiones de uso</label><div id="d-oca"></div>
+    <button class="btn btn-gold btn-block" data-a="estilos">🎭 Ver esta prenda en los 7 estilos</button>
     <div class="btn-row spread">
       <button class="btn btn-ghost danger" data-a="borrar">🗑️ Eliminar</button>
       <button class="btn btn-primary" data-a="guardar">Guardar cambios</button>
@@ -162,6 +165,11 @@ function detalle(id) {
       m.cerrar();
       toast('Cambios guardados ✓', 'ok');
     } catch (e) { mostrarError(e); }
+  });
+  $('[data-a="estilos"]', cont).addEventListener('click', () => {
+    m.cerrar();
+    preseleccionar(id);
+    window.MiImagen.irA('estilos');
   });
   $('[data-a="borrar"]', cont).addEventListener('click', async () => {
     if (await confirmar({ titulo: 'Eliminar del armario', texto: `¿Eliminar “${it.nombre}” de tu armario?`, ok: 'Eliminar', peligro: true })) {
