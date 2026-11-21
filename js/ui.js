@@ -3,6 +3,7 @@ import { compressImage, approxKB } from './image.js';
 import { COLORES, OCASIONES, CATEGORIAS, byId } from './constants.js';
 import { QuotaError } from './store.js';
 import { GeminiError } from './gemini.js';
+import { abrirCapa } from './historial.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -54,7 +55,7 @@ export function mostrarError(e, contexto = '') {
         texto: 'Para usar el análisis con IA necesitas pegar tu API Key gratuita de Google AI Studio en Ajustes. Solo toma 2 minutos.',
         ok: 'Ir a Ajustes',
         cancelar: 'Ahora no',
-      }).then((ok) => { if (ok) location.hash = '#ajustes'; });
+      }).then((ok) => { if (ok) window.MiImagen?.irA('ajustes'); });
     }
     return toast(e.message, 'error', 7000);
   }
@@ -79,12 +80,23 @@ export function abrirModal({ titulo = '', contenido, clase = '', onClose } = {})
   const body = $('.modal-body', el);
   if (typeof contenido === 'string') body.innerHTML = contenido;
   else if (contenido) body.appendChild(contenido);
-  const cerrar = () => {
+  let cerrado = false;
+  // Quita el modal de la pantalla (también lo usa el botón/gesto Atrás).
+  const cerrarDom = () => {
+    if (cerrado) return;
+    cerrado = true;
     el.classList.remove('open');
     modalStack = modalStack.filter((m) => m !== api);
     document.body.classList.toggle('modal-open', modalStack.length > 0);
     setTimeout(() => el.remove(), 250);
     onClose && onClose();
+  };
+  const soltar = abrirCapa(cerrarDom);
+  // Cierre desde la interfaz: además consume su entrada del historial.
+  const cerrar = () => {
+    if (cerrado) return;
+    cerrarDom();
+    soltar();
   };
   el.addEventListener('click', (ev) => { if (ev.target === el) cerrar(); });
   $('.modal-close', el).addEventListener('click', cerrar);

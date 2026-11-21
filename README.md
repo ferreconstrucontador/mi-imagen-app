@@ -12,6 +12,7 @@ Es un sitio 100 % estático (HTML + CSS + JavaScript con módulos ES, sin compil
 - **Estilizador Versátil (Explorar Estilos)**: toma una prenda del armario o una foto nueva y muestra cómo llevarla en los 7 Estilos Universales (Natural, Clásico, Elegante, Romántico, Seductor, Creativo y Dramático), con prendas sugeridas libremente, calzado, accesorios, peinado y maquillaje. Cada sugerencia se puede mandar a Por Comprar.
 - **Ajustes**: API Key (campo de contraseña con botón mostrar/ocultar y validación), modelo, exportar/importar `.json`, uso del almacenamiento e instalación.
 - **? Manual**: tour guiado de 8 pasos, más una sección de Ayuda con preguntas frecuentes y 6 ejemplos prácticos.
+- **Navegación tipo app nativa**: abre en la última pestaña visitada (`miimagen.ultimaPestana`) y el botón o gesto **Atrás** del celular primero cierra el modal o el tour abierto, luego regresa del Estilizador a la pantalla de origen y, desde cualquier pestaña, vuelve a Mi Perfil antes de salir de la app (`js/historial.js` + History API).
 - Fotos comprimidas automáticamente con Canvas (máx. 800 px de ancho, JPEG 0.7). Todo se guarda en `localStorage`.
 - PWA instalable en Android y iOS (manifest, iconos, service worker, uso sin conexión).
 
@@ -28,6 +29,7 @@ js/gemini.js        Cliente REST de Gemini y prompts
 js/image.js         Compresión de imágenes con Canvas
 js/ui.js            Componentes de interfaz (modales, toasts, selector de fotos, chips)
 js/tour.js          Tour guiado de 8 pasos
+js/historial.js     Botón/gesto Atrás: modales, tour y pila de pantallas
 js/views/*.js       Perfil, Evaluar, Por Comprar, Armario, Estilizador, Ajustes y Ayuda
 icons/              Iconos de la PWA
 ```

@@ -1,6 +1,7 @@
 // Tour guiado interactivo de 8 pasos (botón "? Manual").
 import { store } from './store.js';
 import { h, esc, $ } from './ui.js';
+import { abrirCapa } from './historial.js';
 
 const PASOS = [
   {
@@ -39,8 +40,12 @@ const PASOS = [
 
 let activo = null;
 
-export function iniciarTour({ irA }) {
-  if (activo) activo.cerrar();
+/**
+ * @param {{irA:(v:string)=>void, ver:(v:string)=>void}} nav
+ *   irA navega registrando historial; ver sólo muestra la pantalla (para los pasos).
+ */
+export function iniciarTour({ irA, ver }) {
+  if (activo) activo.cerrar(false);
   let i = 0;
   const overlay = h(`<div class="tour" role="dialog" aria-modal="true" aria-label="Tour guiado">
     <div class="tour-spot"></div>
@@ -80,7 +85,7 @@ export function iniciarTour({ irA }) {
 
   const pintar = () => {
     const p = PASOS[i];
-    irA(p.vista);
+    ver(p.vista);
     setTimeout(() => {
       if (p.abrir) { const d = document.querySelector(p.abrir); if (d) d.open = true; }
       target = document.querySelector(p.sel);
@@ -99,7 +104,12 @@ export function iniciarTour({ irA }) {
     }, 60);
   };
 
-  const cerrar = () => {
+  let cerrado = false;
+  // Quita el tour de la pantalla (también lo usa el botón/gesto Atrás,
+  // que además regresa a la pantalla donde se abrió).
+  const cerrarDom = () => {
+    if (cerrado) return;
+    cerrado = true;
     window.removeEventListener('resize', posicionar);
     window.removeEventListener('scroll', posicionar, true);
     document.removeEventListener('keydown', teclas);
@@ -107,6 +117,15 @@ export function iniciarTour({ irA }) {
     document.body.classList.remove('tour-open');
     activo = null;
     try { store.updateSettings({ tourVisto: true }); } catch { /* */ }
+  };
+  const soltar = abrirCapa(cerrarDom);
+  // Cierre desde la interfaz: se queda en la pantalla del último paso,
+  // registrada correctamente en el historial.
+  const cerrar = (quedarseAqui = true) => {
+    if (cerrado) return;
+    const vistaFinal = PASOS[i].vista;
+    cerrarDom();
+    soltar(quedarseAqui ? () => irA(vistaFinal) : undefined);
   };
   const teclas = (e) => {
     if (e.key === 'Escape') cerrar();
@@ -116,7 +135,8 @@ export function iniciarTour({ irA }) {
 
   overlay.addEventListener('click', (e) => {
     const t = e.target.closest('[data-t]');
-    if (e.target.closest('a[href^="#"]')) { cerrar(); return; }
+    // Un enlace interno: el enrutador global se encarga de navegar.
+    if (e.target.closest('a[href^="#"]')) { cerrar(false); return; }
     if (!t) return;
     if (t.dataset.t === 'skip') return cerrar();
     if (t.dataset.t === 'prev' && i > 0) { i--; pintar(); }

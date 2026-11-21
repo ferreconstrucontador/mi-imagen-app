@@ -1,6 +1,7 @@
-// Punto de entrada: enrutador por hash, estado global y registro de la PWA.
+// Punto de entrada: enrutador con History API, estado global y registro de la PWA.
 import { store } from './store.js';
-import { $, $$, abrirModal, h, cerrarModales } from './ui.js';
+import { $, $$, abrirModal, h } from './ui.js';
+import * as hist from './historial.js';
 import * as perfil from './views/perfil.js';
 import * as evaluar from './views/evaluar.js';
 import * as comprar from './views/comprar.js';
@@ -11,21 +12,75 @@ import * as estilos from './views/estilos.js';
 import { iniciarTour } from './tour.js';
 
 const VIEWS = { perfil, evaluar, comprar, armario, ajustes, ayuda, estilos };
-// Vistas secundarias que resaltan una pestaña de la barra inferior.
-const NAV_PADRE = { estilos: 'armario' };
+// Pestañas de la barra inferior y vistas secundarias (se apilan sobre la pestaña de origen).
+const PESTANAS = ['perfil', 'evaluar', 'comprar', 'armario', 'ajustes'];
+const SECUNDARIAS = ['estilos', 'ayuda'];
+const INICIO = 'perfil';
+const LLAVE_ULTIMA = 'miimagen.ultimaPestana';
+
 const montadas = new Set();
 let actual = null;
 
+// Posición en la pila de navegación:
+// nivel 0 = Perfil (raíz) · nivel 1 = otra pestaña · nivel 2+ = vistas secundarias.
+// Así "Atrás" siempre regresa: secundaria → pestaña de origen → Perfil → salir.
+let pos = { vista: INICIO, nivel: 0, padre: null };
+const estado = () => ({ vista: pos.vista, nivel: pos.nivel, padre: pos.padre, capas: [] });
+
+function recordarPestana(nombre) {
+  if (!PESTANAS.includes(nombre)) return;
+  try { localStorage.setItem(LLAVE_ULTIMA, nombre); } catch { /* almacenamiento no disponible */ }
+}
+function ultimaPestana() {
+  try {
+    const v = localStorage.getItem(LLAVE_ULTIMA);
+    return PESTANAS.includes(v) ? v : INICIO;
+  } catch { return INICIO; }
+}
+
+/** Navega registrando la entrada correcta en el historial. */
 export function irA(nombre) {
-  if (location.hash !== '#' + nombre) history.pushState(null, '', '#' + nombre);
+  if (!VIEWS[nombre]) nombre = INICIO;
+  // Primero se cierran modales/tour y se esperan los retrocesos en curso.
+  if (hist.hayCapas()) { hist.cerrarTodasLasCapas(() => irA(nombre)); return; }
+  if (hist.ocupado()) { hist.cuandoLibre(() => irA(nombre)); return; }
+
+  if (nombre === pos.vista) { mostrar(nombre); return; }
+
+  if (SECUNDARIAS.includes(nombre)) {
+    const padre = SECUNDARIAS.includes(pos.vista) ? pos.padre : pos.vista;
+    pos = { vista: nombre, nivel: pos.nivel + 1, padre };
+    history.pushState(estado(), '', '#' + nombre);
+    mostrar(nombre);
+    return;
+  }
+
+  // Pestaña principal: nunca se apila más de una pestaña sobre Perfil.
+  const objetivo = nombre === INICIO ? 0 : 1;
+  if (pos.nivel > objetivo) {
+    hist.retroceder(pos.nivel - objetivo, () => { sincronizarDesdeHistorial(); irA(nombre); });
+    return;
+  }
+  pos = { vista: nombre, nivel: objetivo, padre: null };
+  if (objetivo === 0 || history.state?.nivel === 1) history.replaceState(estado(), '', '#' + nombre);
+  else history.pushState(estado(), '', '#' + nombre);
   mostrar(nombre);
 }
 
-function mostrar(nombre) {
-  if (!VIEWS[nombre]) nombre = 'perfil';
+function sincronizarDesdeHistorial() {
+  const st = history.state;
+  if (st && typeof st.nivel === 'number' && VIEWS[st.vista]) {
+    pos = { vista: st.vista, nivel: st.nivel, padre: st.padre || null };
+  }
+}
+
+/** Sólo muestra una vista (sin tocar el historial). */
+function mostrar(nombre, { recordar = true } = {}) {
+  if (!VIEWS[nombre]) nombre = INICIO;
+  const navActivo = SECUNDARIAS.includes(nombre) ? (nombre === pos.vista ? pos.padre : null) : nombre;
   $$('.view').forEach((v) => { v.hidden = v.dataset.view !== nombre; });
   $$('[data-nav]').forEach((a) => {
-    const activo = a.dataset.nav === (NAV_PADRE[nombre] || nombre);
+    const activo = a.dataset.nav === navActivo;
     a.classList.toggle('active', activo);
     if (activo) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
@@ -38,10 +93,12 @@ function mostrar(nombre) {
   mod.show && mod.show(el);
   if (actual !== nombre) window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   actual = nombre;
+  if (recordar) recordarPestana(nombre);
 }
 
 function rutaActual() {
-  return (location.hash || '#perfil').slice(1).split('?')[0];
+  const r = (location.hash || '').slice(1).split('?')[0];
+  return VIEWS[r] ? r : '';
 }
 
 function actualizarCabecera() {
@@ -67,13 +124,50 @@ store.subscribe((part) => {
   montadas.forEach((n) => VIEWS[n].onStore && VIEWS[n].onStore(part, n === actual));
 });
 
-window.addEventListener('hashchange', () => { cerrarModales(); mostrar(rutaActual()); });
-window.addEventListener('popstate', () => mostrar(rutaActual()));
+// ---------- Botón / gesto "Atrás" ----------
+window.addEventListener('popstate', (e) => {
+  if (hist.consumirPropio()) return; // retroceso hecho por la propia app
+  const st = e.state;
+  // 1) Si hay un modal o el tour abierto, Atrás lo cierra.
+  hist.cerrarCapasExcepto(st?.capas || []);
+  if (st && typeof st.nivel === 'number' && VIEWS[st.vista]) {
+    // 2) Vista secundaria → pestaña de origen · 3) pestaña → Perfil.
+    pos = { vista: st.vista, nivel: st.nivel, padre: st.padre || null };
+    mostrar(pos.vista);
+  } else {
+    // Entrada ajena (p. ej. se editó la URL a mano): la normalizamos.
+    const v = rutaActual() || INICIO;
+    pos = { vista: v, nivel: v === INICIO ? 0 : 1, padre: null };
+    history.replaceState(estado(), '', '#' + v);
+    mostrar(v);
+  }
+});
 
-$('#btn-manual').addEventListener('click', () => iniciarTour({ irA }));
+// Si alguien escribe otro #hash a mano en la barra de direcciones.
+window.addEventListener('hashchange', () => {
+  const r = rutaActual();
+  if (r && r !== pos.vista && !hist.ocupado()) {
+    sincronizarDesdeHistorial();
+    if (r !== pos.vista) irA(r);
+  }
+});
+
+// Todos los enlaces internos (#vista) pasan por el enrutador.
+document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest('a[href^="#"]');
+  if (!a) return;
+  const destino = a.getAttribute('href').slice(1);
+  if (!VIEWS[destino]) return;
+  e.preventDefault();
+  irA(destino);
+});
+
+const abrirTour = () => iniciarTour({ irA, ver: (v) => mostrar(v, { recordar: false }) });
+$('#btn-manual').addEventListener('click', abrirTour);
 
 // Exponemos el enrutador a otras vistas sin crear dependencias circulares.
-window.MiImagen = { irA, iniciarTour: () => iniciarTour({ irA }) };
+window.MiImagen = { irA, iniciarTour: abrirTour };
 
 // ---------- Instalación PWA ----------
 window.MiImagen.instalacion = { prompt: null };
@@ -94,8 +188,33 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 // ---------- Arranque ----------
+function arrancar() {
+  const st = history.state;
+  if (st && typeof st.nivel === 'number' && VIEWS[st.vista]) {
+    // Recarga dentro de la misma sesión: conservamos la pila existente.
+    pos = { vista: st.vista, nivel: st.nivel, padre: st.padre || null };
+    if (st.capas?.length) history.replaceState(estado(), '', '#' + pos.vista); // los modales no sobreviven a la recarga
+    mostrar(pos.vista);
+    return;
+  }
+  // Apertura nueva: un #hash explícito (atajo o enlace) manda; si no, la última pestaña visitada.
+  const pedido = rutaActual();
+  const pestana = PESTANAS.includes(pedido) ? pedido : ultimaPestana();
+  pos = { vista: INICIO, nivel: 0, padre: null };
+  history.replaceState(estado(), '', '#' + INICIO);
+  if (pestana !== INICIO) {
+    pos = { vista: pestana, nivel: 1, padre: null };
+    history.pushState(estado(), '', '#' + pestana);
+  }
+  if (SECUNDARIAS.includes(pedido)) {
+    pos = { vista: pedido, nivel: pos.nivel + 1, padre: pos.vista };
+    history.pushState(estado(), '', '#' + pedido);
+  }
+  mostrar(pos.vista);
+}
+
 actualizarCabecera();
-mostrar(rutaActual());
+arrancar();
 
 if (!store.get().settings.tourVisto) {
   setTimeout(() => {
@@ -115,7 +234,7 @@ if (!store.get().settings.tourVisto) {
     $$('[data-a]', cont).forEach((b) => b.addEventListener('click', () => {
       try { store.updateSettings({ tourVisto: true }); } catch { /* */ }
       m.cerrar();
-      if (b.dataset.a === 'tour') iniciarTour({ irA });
+      if (b.dataset.a === 'tour') abrirTour();
     }));
   }, 500);
 }
