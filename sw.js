@@ -1,5 +1,5 @@
 // Service Worker de MiImagenApp: funciona sin conexión (excepto el análisis con IA).
-const VERSION = 'miimagen-v1.2.0';
+const VERSION = 'miimagen-v1.3.0';
 const SHELL = [
   './',
   './index.html',
