@@ -2,10 +2,9 @@
 import { store } from '../store.js';
 import { MODELOS_SUGERIDOS, DEFAULT_MODEL, APP_NAME } from '../constants.js';
 import { validarApiKey } from '../gemini.js';
-import { $, $$, esc, toast, mostrarError, confirmar, descargar, fechaCorta } from '../ui.js';
+import { $, $$, esc, toast, mostrarError, confirmar, descargar, fechaCorta, cargando } from '../ui.js';
 
 let root;
-const LIMITE_CARACTERES = 5 * 1024 * 1024; // ~5 millones de caracteres (límite típico de localStorage)
 
 export function mount(el) {
   root = el;
@@ -51,7 +50,16 @@ export function mount(el) {
     <div class="card" data-tour="respaldo">
       <h3 class="section-title">💾 Respaldo de datos</h3>
       <p class="muted small">Toda tu información vive en este navegador. Exporta un respaldo de vez en cuando o para pasarla a otro teléfono.</p>
-      <div class="storage-meter"><div class="bar"><span id="storage-bar"></span></div><small id="storage-text"></small></div>
+      <div class="storage-meter" id="storage-meter" aria-live="polite">
+        <div class="storage-head"><b id="storage-usado">Calculando…</b><span id="storage-cuota"></span></div>
+        <div class="bar"><span id="storage-bar"></span></div>
+        <div class="storage-legend">
+          <span><i class="sw-dot fotos"></i><span id="storage-fotos">Fotos</span></span>
+          <span><i class="sw-dot texto"></i><span id="storage-texto">Textos y ajustes</span></span>
+        </div>
+        <small id="storage-text"></small>
+        <button type="button" class="btn btn-sm btn-soft" id="btn-proteger" hidden>🔒 Proteger mis fotos en este dispositivo</button>
+      </div>
       <ul class="stats-mini" id="stats-mini"></ul>
       <label class="switch"><input type="checkbox" id="incluir-key"><span></span> Incluir mi API Key en el respaldo</label>
       <div class="btn-row">
@@ -165,11 +173,7 @@ async function guardarKey() {
 
 function pintarDatos() {
   const s = store.get();
-  const uso = store.usoAlmacenamiento();
-  const pct = Math.min(100, Math.round((uso / LIMITE_CARACTERES) * 100));
-  $('#storage-bar', root).style.width = pct + '%';
-  $('#storage-bar', root).className = pct > 85 ? 'alto' : pct > 60 ? 'medio' : '';
-  $('#storage-text', root).textContent = `Espacio usado: ${(uso / 1024 / 1024).toFixed(2)} MB de ~5 MB (${pct}%) · Las fotos se comprimen a 800 px automáticamente.`;
+  pintarAlmacenamiento();
   $('#stats-mini', root).innerHTML = `
     <li><b>${s.profile.selfie ? '✓' : '—'}</b><span>Selfie</span></li>
     <li><b>${s.diagnostico ? '✓' : '—'}</b><span>Diagnóstico</span></li>
@@ -189,6 +193,55 @@ function pintarDatos() {
       toast('Historial limpio ✓');
     }
   });
+}
+
+// ---------- Medidor de espacio (navigator.storage.estimate) ----------
+function formatoBytes(b) {
+  const n = Math.max(0, b || 0);
+  const f = (v, d) => v.toLocaleString('es-MX', { maximumFractionDigits: d });
+  if (n < 1024 * 1024) return `${f(n / 1024, 0)} KB`;
+  if (n < 1024 ** 3) return `${f(n / 1024 / 1024, n < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  return `${f(n / 1024 ** 3, 1)} GB`;
+}
+
+let turnoMedidor = 0;
+async function pintarAlmacenamiento() {
+  const turno = ++turnoMedidor;
+  const info = await store.infoAlmacenamiento();
+  if (turno !== turnoMedidor || !root?.isConnected) return;
+  const propio = info.fotos + info.texto;
+  const meter = $('#storage-meter', root);
+  const bar = $('#storage-bar', root);
+  $('#storage-fotos', root).textContent = `Fotos (${info.nFotos}) · ${formatoBytes(info.fotos)}`;
+  $('#storage-texto', root).textContent = `Textos y ajustes · ${formatoBytes(info.texto)}`;
+  const tieneCuota = info.cuota !== null && info.usado !== null;
+  meter.classList.toggle('sin-cuota', !tieneCuota);
+  if (tieneCuota) {
+    const pct = (info.usado / info.cuota) * 100;
+    const libre = Math.max(0, info.cuota - info.usado);
+    $('#storage-usado', root).textContent = `${formatoBytes(info.usado)} usados`;
+    $('#storage-cuota', root).textContent = `${formatoBytes(libre)} disponibles`;
+    bar.style.width = `${Math.max(1.5, Math.min(100, pct))}%`;
+    bar.className = pct > 90 ? 'alto' : pct > 70 ? 'medio' : '';
+    $('#storage-text', root).textContent = `${pct < 0.1 ? 'Menos del 0.1' : pct.toLocaleString('es-MX', { maximumFractionDigits: 1 })} % del espacio que el navegador reserva para MiImagenApp (${formatoBytes(info.cuota)} en total).`;
+  } else {
+    // El navegador no reporta su cuota: mostramos lo que ocupa la app con una barra decorativa.
+    $('#storage-usado', root).textContent = `${formatoBytes(propio)} ocupados`;
+    $('#storage-cuota', root).textContent = 'Espacio total no disponible';
+    bar.style.width = '';
+    bar.className = '';
+    $('#storage-text', root).textContent = 'Tu navegador no informa cuánto espacio queda. Las fotos se guardan comprimidas (800 px) para ocupar lo mínimo.';
+  }
+  if (!info.indexedDB) {
+    $('#storage-text', root).textContent += ' ⚠️ Este navegador no permite la base de datos de fotos: se guardan en el almacenamiento básico (máx. ~5 MB).';
+  }
+  const proteger = $('#btn-proteger', root);
+  proteger.hidden = !(info.persistente === false && navigator.storage?.persist);
+  proteger.onclick = async () => {
+    const ok = await store.protegerAlmacenamiento();
+    toast(ok ? 'Listo: el navegador no borrará tus fotos para liberar espacio 🔒' : 'Tu navegador no permitió la protección. Exporta respaldos con frecuencia.', ok ? 'ok' : 'warn', 5000);
+    pintarAlmacenamiento();
+  };
 }
 
 function exportar() {
@@ -217,7 +270,10 @@ async function importar(e) {
       ok: 'Importar',
     });
     if (!ok) return;
-    store.importar(json);
+    const fin = cargando(['Importando tu respaldo…', 'Guardando tus fotos…']);
+    try {
+      await store.importar(json);
+    } finally { fin(); }
     toast('¡Respaldo importado con éxito! ✓', 'ok');
   } catch (err) { mostrarError(err); }
 }
@@ -225,7 +281,7 @@ async function importar(e) {
 async function borrarTodo() {
   const ok = await confirmar({ titulo: '¿Borrar todo?', texto: 'Se eliminarán tus fotos, diagnóstico, lista Por Comprar, armario, historial y API Key. Te recomendamos exportar un respaldo antes.', ok: 'Sí, borrar todo', peligro: true });
   if (!ok) return;
-  store.borrarTodo();
+  await store.borrarTodo();
   toast('Datos eliminados');
 }
 

@@ -12,7 +12,7 @@ const FAQ = [
   ['¿Qué es el Estilizador Versátil?', 'Está en Mi Armario → “Estilizador Versátil”. Eliges una prenda de tu armario (o le tomas foto a una nueva) y Gemini te muestra cómo llevarla en los 7 Estilos Universales: Natural, Clásico, Elegante, Romántico, Seductor, Creativo y Dramático. Aquí la IA sugiere libremente prendas que quizá no tienes; puedes mandar cualquiera a tu lista Por Comprar con un toque.'],
   ['¿Cómo paso mis datos a otro teléfono?', 'En Ajustes → Exportar respaldo (.json). Envíate el archivo (correo, WhatsApp, Drive) y en el otro teléfono usa Importar respaldo. Funciona también para guardar copias de seguridad.'],
   ['¿Funciona sin internet?', 'Sí para consultar tu diagnóstico, armario y lista Por Comprar. Los análisis con IA necesitan conexión.'],
-  ['¿Cuántas prendas puedo guardar?', 'Cada foto se comprime automáticamente (máx. 800 px, ~60–120 KB). Normalmente caben entre 30 y 50 artículos con foto. En Ajustes ves el espacio usado; exporta respaldos con frecuencia.'],
+  ['¿Cuántas prendas puedo guardar?', 'Cientos. Cada foto se comprime automáticamente (máx. 800 px, ~60–120 KB) y se guarda en la base de datos del navegador, que normalmente tiene varios GB disponibles. En Ajustes ves el espacio real usado y disponible; exporta respaldos con frecuencia.'],
   ['¿Cómo la instalo como app?', 'Android (Chrome): menú ⋮ → “Instalar app”. iPhone (Safari): botón Compartir → “Agregar a pantalla de inicio”. Se abrirá a pantalla completa como cualquier app.'],
 ];
 
