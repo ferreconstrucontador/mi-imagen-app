@@ -21,7 +21,7 @@ export function mount(el) {
       <p class="muted small">Pega tu API Key gratuita de Google AI Studio. Se guarda <b>solo en este dispositivo</b> y se envía únicamente a Google para hacer los análisis.</p>
       <label class="field"><span>API Key de Gemini</span>
         <div class="input-group">
-          <input type="password" id="api-key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AIza…" value="${esc(s.apiKey)}">
+          <input type="password" id="api-key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="AQ.… o AIza…" value="${esc(s.apiKey)}">
           <button type="button" class="btn btn-soft" id="toggle-key" aria-label="Mostrar u ocultar la API Key">👁️ Mostrar</button>
         </div>
       </label>
@@ -41,7 +41,7 @@ export function mount(el) {
           <li>Entra a <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a> con tu cuenta de Google (Gmail).</li>
           <li>Acepta los términos si es tu primera vez.</li>
           <li>Presiona <b>“Create API key”</b> (Crear clave de API).</li>
-          <li>Copia la clave completa (empieza con <code>AIza</code>).</li>
+          <li>Copia la clave completa (empieza con <code>AQ.</code> o <code>AIza</code>).</li>
           <li>Pégala arriba y presiona <b>Guardar y validar</b>.</li>
         </ol>
         <p class="muted small">El nivel gratuito permite muchas consultas al día. Si ves un aviso de límite, espera un minuto o cambia a Flash-Lite.</p>

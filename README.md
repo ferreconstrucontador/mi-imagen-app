@@ -51,7 +51,7 @@ Al publicar cambios, sube `VERSION` en `sw.js` para que las usuarias reciban la 
 ## API Key de Gemini
 
 1. Entra a <https://aistudio.google.com/apikey> con una cuenta de Google.
-2. Elige **Create API key** y cópiala.
+2. Elige **Create API key** y cópiala (empieza con `AQ.` o `AIza`).
 3. Pégala en **Ajustes → Guardar y validar**.
 
 La clave se guarda solo en el `localStorage` del dispositivo y se envía únicamente a `generativelanguage.googleapis.com`. El modelo predeterminado es `gemini-2.5-flash`; se puede cambiar en Ajustes.

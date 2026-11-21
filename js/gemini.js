@@ -23,7 +23,8 @@ export function hayApiKey() {
 function traducirError(status, body) {
   const msg = body?.error?.message || '';
   const reason = JSON.stringify(body?.error?.details || '') + msg;
-  if (/API_KEY_INVALID|API key not valid|API key expired/i.test(reason)) {
+  // Las claves "AIza…" inválidas responden 400 (API_KEY_INVALID); las nuevas "AQ.…" responden 401.
+  if (status === 401 || /API_KEY_INVALID|API key not valid|API key expired/i.test(reason)) {
     return new GeminiError('Tu API Key no es válida o expiró. Revísala en Ajustes (cópiala completa desde Google AI Studio).', { code: 'api_key', status, detalle: msg });
   }
   if (status === 400 && /location is not supported|User location/i.test(msg)) {
@@ -62,8 +63,14 @@ async function fetchConTimeout(url, opts, ms = TIMEOUT_MS) {
 export async function validarApiKey(apiKey, modelo) {
   const key = (apiKey || '').trim();
   if (!key) throw new GeminiError('Pega tu API Key antes de validarla.', { code: 'sin_key' });
-  if (!/^[A-Za-z0-9_\-]{20,}$/.test(key)) {
-    throw new GeminiError('El formato no parece una API Key de Google (suele empezar con "AIza" y no lleva espacios).', { code: 'formato' });
+  // Google emite claves con distintos formatos ("AIza…" y las nuevas "AQ.…"), así que
+  // sólo revisamos lo básico y dejamos que la conexión real con Gemini decida.
+  // Caracteres ASCII visibles: los encabezados HTTP no admiten espacios ni acentos.
+  if (/\s/.test(key)) {
+    throw new GeminiError('La API Key no debe llevar espacios ni saltos de línea. Cópiala de nuevo desde Google AI Studio.', { code: 'formato' });
+  }
+  if (!/^[\x21-\x7E]{20,}$/.test(key)) {
+    throw new GeminiError('El formato no parece una API Key de Google: debe tener al menos 20 caracteres (suele empezar con "AQ." o "AIza").', { code: 'formato' });
   }
   const m = (modelo || DEFAULT_MODEL).trim();
   const res = await fetchConTimeout(`${API_BASE}/models/${encodeURIComponent(m)}`, {
