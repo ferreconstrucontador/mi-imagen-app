@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { nombreCategoria } from '../constants.js';
 import { veredictoHTML } from './evaluar.js';
-import { $, $$, h, esc, toast, mostrarError, abrirModal, confirmar, safeUrl, fechaCorta, colorDot } from '../ui.js';
+import { $, $$, h, esc, toast, mostrarError, abrirModal, mostrarDialogo, safeUrl, fechaCorta, colorDot } from '../ui.js';
 
 let root;
 let orden = 'fecha';
@@ -89,7 +89,11 @@ async function accion(act, id) {
       store.marcarComprado(id);
       toast('¡Felicidades por tu compra! Ya está en Mi Armario 👗', 'ok');
     } else if (act === 'borrar') {
-      if (await confirmar({ titulo: 'Eliminar artículo', texto: `¿Quitar “${it.nombre}” de tu lista?`, ok: 'Eliminar', peligro: true })) {
+      if (await mostrarDialogo({
+        mensaje: `Se eliminará “${it.nombre}” de tu lista Por Comprar${it.foto ? ', junto con su foto' : ''}${it.veredicto && it.veredicto.origen !== 'estilizador' ? ' y su análisis de Gemini' : ''}.\n\nNo afecta a tu armario.`,
+        textoConfirmar: 'Eliminar de la lista',
+        peligro: true,
+      })) {
         store.removePorComprar(id);
         toast('Artículo eliminado');
       }

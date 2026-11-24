@@ -10,6 +10,9 @@ import * as ajustes from './views/ajustes.js';
 import * as ayuda from './views/ayuda.js';
 import * as estilos from './views/estilos.js';
 import { iniciarTour } from './tour.js';
+import { copiaDiaria } from './boveda.js';
+import { revisarRecordatorio, contenedorAvisos } from './respaldo.js';
+import './version.js'; // define self.MIIMAGEN_VERSION (versión única, compartida con sw.js)
 
 const VIEWS = { perfil, evaluar, comprar, armario, ajustes, ayuda, estilos };
 // Pestañas de la barra inferior y vistas secundarias (se apilan sobre la pestaña de origen).
@@ -181,11 +184,57 @@ window.addEventListener('appinstalled', () => {
   document.dispatchEvent(new CustomEvent('mia:instalable'));
 });
 
+// ---------- Service worker y aviso de nueva versión ----------
+let registroSW = null;
+let quiereActualizar = false;
+
+function avisarNuevaVersion(worker) {
+  // Sólo si ya había una versión controlando la página (no en la primera instalación).
+  if (!worker || !navigator.serviceWorker.controller || document.getElementById('aviso-version')) return;
+  const el = document.createElement('div');
+  el.id = 'aviso-version';
+  el.className = 'aviso-banda';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<span class="aviso-ico" aria-hidden="true">✨</span>
+    <span class="aviso-txt">Hay una versión nueva</span>
+    <button type="button" class="btn btn-sm btn-gold">Actualizar</button>`;
+  el.querySelector('button').addEventListener('click', () => {
+    quiereActualizar = true;
+    worker.postMessage({ tipo: 'ACTUALIZAR' }); // el SW se activa y recargamos en controllerchange
+  });
+  contenedorAvisos().prepend(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+}
+
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW no registrado', e));
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (quiereActualizar) { quiereActualizar = false; location.reload(); } // sólo recarga si la usuaria tocó "Actualizar"
+  });
+  window.addEventListener('load', async () => {
+    try {
+      registroSW = await navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' });
+      if (registroSW.waiting) avisarNuevaVersion(registroSW.waiting);
+      registroSW.addEventListener('updatefound', () => {
+        const w = registroSW.installing;
+        w?.addEventListener('statechange', () => { if (w.state === 'installed') avisarNuevaVersion(w); });
+      });
+    } catch (e) {
+      console.warn('SW no registrado', e);
+    }
   });
 }
+
+// Al volver a la app: buscar actualizaciones, copia diaria y recordatorio de respaldo.
+let ultimaRevisionSW = Date.now();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (registroSW && Date.now() - ultimaRevisionSW > 60 * 1000) {
+    ultimaRevisionSW = Date.now();
+    registroSW.update().catch(() => { /* sin conexión */ });
+  }
+  copiaDiaria();
+  revisarRecordatorio();
+});
 
 // ---------- Arranque ----------
 function arrancar() {
@@ -231,6 +280,11 @@ if (inicio.migradas) {
 if (inicio.faltantes) {
   toast(`No se encontraron ${inicio.faltantes} foto${inicio.faltantes === 1 ? '' : 's'} guardada${inicio.faltantes === 1 ? '' : 's'}. Puedes volver a subirlas o importar un respaldo.`, 'warn', 8000);
 }
+if (inicio.fotosNoDisponibles) {
+  toast('No se pudo abrir la base de fotos (¿hay otra pestaña de MiImagenApp abierta?). Tus fotos siguen guardadas: cierra las demás pestañas y vuelve a abrir la app.', 'warn', 10000);
+}
+// Doble Bóveda y recordatorio de respaldo, sin retrasar la primera pantalla.
+setTimeout(() => { copiaDiaria(); revisarRecordatorio(); }, 1500);
 
 if (!store.get().settings.tourVisto) {
   setTimeout(() => {

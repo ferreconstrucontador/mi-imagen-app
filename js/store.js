@@ -22,6 +22,14 @@ const KEYS = {
   settings: PREFIX + 'ajustes',
 };
 const PARTES = ['profile', 'diagnostico', 'porComprar', 'armario', 'historial', 'settings', 'apiKey'];
+// Bloques con datos de la usuaria (sus cambios cuentan como "actividad" para el aviso de respaldo).
+const PARTES_DATOS = ['profile', 'diagnostico', 'porComprar', 'armario', 'historial'];
+// Metadatos del recordatorio de respaldo (fechas ISO).
+const META = {
+  actividad: PREFIX + 'ultimaActividad',
+  respaldo: PREFIX + 'ultimoRespaldo',
+  aviso: PREFIX + 'ultimoAvisoRespaldo',
+};
 
 // Bloques que contienen fotos y prefijo de sus claves en IndexedDB.
 const PARTES_FOTOS = { profile: 'perfil', armario: 'armario', porComprar: 'porComprar', historial: 'historial' };
@@ -220,11 +228,27 @@ function falloIDB(e) {
   usarIDB = false;
   let aviso = 'No se pudieron guardar las fotos en la base de datos del navegador; se guardaron en el almacenamiento básico.';
   for (const part of Object.keys(PARTES_FOTOS)) {
-    try { escribirLocal(part, state[part]); } catch (err) {
+    try { escribirLocal(part, conservarRefs(part, state[part])); } catch (err) {
       aviso = 'No hay espacio suficiente para guardar tus fotos. Exporta un respaldo y elimina algunas fotos.';
     }
   }
   document.dispatchEvent(new CustomEvent('mia:aviso-almacenamiento', { detail: aviso }));
+}
+
+/**
+ * Referencias "idb:<clave>" que no se pudieron cargar porque MiImagenDB no abrió
+ * (p. ej. bloqueada). Se conservan al guardar para no perder esas fotos: siguen
+ * en IndexedDB y volverán a verse cuando la base abra.
+ */
+const refsSinCargar = new Set();
+
+function conservarRefs(part, valor) {
+  if (!refsSinCargar.size || !PARTES_FOTOS[part]) return valor;
+  const pre = PARTES_FOTOS[part];
+  const r = (clave, v) => (!v && refsSinCargar.has(clave) ? REF + clave : v);
+  if (part === 'profile') return { ...valor, selfie: r(`${pre}:selfie`, valor.selfie), cuerpo: r(`${pre}:cuerpo`, valor.cuerpo) };
+  if (part === 'historial') return valor.map((h) => ({ ...h, thumb: r(`${pre}:${h.id}`, h.thumb) }));
+  return valor.map((it) => ({ ...it, foto: r(`${pre}:${it.id}`, it.foto) }));
 }
 
 /** Guardado normal (síncrono para el texto, fotos en segundo plano). */
@@ -235,8 +259,18 @@ function persist(part) {
     const { poner, borrar } = diferencias(part, fotos);
     encolar([...poner, ...borrar]);
   } else {
-    escribirLocal(part, state[part]);
+    escribirLocal(part, conservarRefs(part, state[part]));
   }
+}
+
+function leerMeta(nombre) {
+  try { return localStorage.getItem(META[nombre]) || null; } catch { return null; }
+}
+function escribirMeta(nombre, valor) {
+  try {
+    if (valor) localStorage.setItem(META[nombre], valor);
+    else localStorage.removeItem(META[nombre]);
+  } catch { /* metadatos opcionales */ }
 }
 
 /**
@@ -244,7 +278,7 @@ function persist(part) {
  * guardadas, el texto con referencias en localStorage. Se usa al migrar e importar.
  */
 async function persistSeguro(part) {
-  if (!(usarIDB && PARTES_FOTOS[part])) { escribirLocal(part, state[part]); return 0; }
+  if (!(usarIDB && PARTES_FOTOS[part])) { escribirLocal(part, conservarRefs(part, state[part])); return 0; }
   const { copia, fotos } = separar(part, state[part]);
   const { poner, borrar } = diferencias(part, fotos);
   await cola;
@@ -292,11 +326,18 @@ export const store = {
     };
     try { crudo.apiKey = localStorage.getItem(KEYS.apiKey) || ''; } catch { /* sin acceso */ }
     let faltantes = 0;
+    refsSinCargar.clear();
     Object.keys(PARTES_FOTOS).forEach((part) => {
+      if (!usarIDB) {
+        // La base no abrió: recordamos sus referencias para no borrarlas al guardar.
+        for (const m of JSON.stringify(crudo[part] ?? '').matchAll(/"idb:([^"]+)"/g)) refsSinCargar.add(m[1]);
+      }
       const r = hidratar(part, crudo[part], mapa);
       crudo[part] = r.valor;
       faltantes += r.faltan;
     });
+    const fotosNoDisponibles = refsSinCargar.size;
+    if (fotosNoDisponibles) faltantes = 0; // no faltan: están en MiImagenDB, que no se pudo abrir
     state = normalize(crudo);
     mapa.forEach((v, k) => enIDB.set(k, v));
 
@@ -324,7 +365,7 @@ export const store = {
         encolar(huerfanas);
       }
     }
-    return { migradas, faltantes };
+    return { migradas, faltantes, fotosNoDisponibles };
   },
 
   /** Espera a que terminen de guardarse las fotos pendientes. */
@@ -340,7 +381,48 @@ export const store = {
       state = { ...state, [part]: previo };
       throw e;
     }
+    if (PARTES_DATOS.includes(part)) this.marcarActividad();
     emit(part);
+  },
+
+  // ---------- Recordatorio de respaldo ----------
+  /** Fechas ISO (o null) de la última actividad, el último respaldo .json y el último aviso. */
+  meta: () => ({ actividad: leerMeta('actividad'), respaldo: leerMeta('respaldo'), aviso: leerMeta('aviso') }),
+  marcarActividad() { escribirMeta('actividad', new Date().toISOString()); },
+  marcarRespaldo() { escribirMeta('respaldo', new Date().toISOString()); },
+  marcarAviso() { escribirMeta('aviso', new Date().toISOString()); },
+
+  /** ¿Hay algo que valga la pena respaldar? */
+  tieneDatos() {
+    const s = state;
+    return !!(s.profile.selfie || s.profile.ciudad || s.profile.nombre || s.diagnostico || s.armario.length || s.porComprar.length || s.historial.length);
+  },
+
+  // ---------- Doble Bóveda ----------
+  /**
+   * Copia de los datos para la bóveda: textos con referencias "idb:<clave>" y,
+   * aparte, las fotos actuales (Map<clave, dataURL>) para que la bóveda las reduzca.
+   */
+  copiaParaBoveda() {
+    const data = {};
+    const fotos = new Map();
+    ['profile', 'diagnostico', 'porComprar', 'armario', 'historial', 'settings'].forEach((part) => {
+      if (PARTES_FOTOS[part]) {
+        const r = separar(part, state[part]);
+        data[part] = r.copia;
+        r.fotos.forEach((v, k) => fotos.set(k, v));
+      } else {
+        data[part] = state[part];
+      }
+    });
+    return { data: JSON.parse(JSON.stringify(data)), fotos };
+  },
+
+  /** Fotos actuales en tamaño completo: Map<clave, dataURL>. */
+  fotosActuales() {
+    const fotos = new Map();
+    Object.keys(PARTES_FOTOS).forEach((part) => separar(part, state[part]).fotos.forEach((v, k) => fotos.set(k, v)));
+    return fotos;
   },
 
   updateProfile(patch) {
@@ -402,8 +484,9 @@ export const store = {
   /**
    * Las fotos viajan dentro del .json como dataURL (mismo formato que v1.0–v1.3),
    * así un respaldo nuevo también se puede abrir en versiones anteriores.
+   * Por seguridad la API Key de Gemini NUNCA se incluye (se queda sólo en el dispositivo).
    */
-  exportar({ incluirApiKey = false } = {}) {
+  exportar() {
     const s = state;
     return {
       app: APP_NAME,
@@ -416,7 +499,7 @@ export const store = {
         armario: s.armario,
         historial: s.historial,
         settings: s.settings,
-        apiKey: incluirApiKey ? s.apiKey : '',
+        apiKey: '',
       },
     };
   },
@@ -428,8 +511,10 @@ export const store = {
     const data = json.data && typeof json.data === 'object' ? json.data : json;
     const conocidas = ['profile', 'diagnostico', 'porComprar', 'armario', 'historial'];
     if (!conocidas.some((k) => k in data)) throw new Error('Este archivo no parece un respaldo de MiImagenApp.');
-    const n = normalize({ ...data, apiKey: data.apiKey || state.apiKey });
+    // La API Key configurada en el dispositivo se conserva; la del archivo sólo se usa si no hay ninguna.
+    const n = normalize({ ...data, apiKey: state.apiKey || data.apiKey });
     const respaldo = { ...state };
+    refsSinCargar.clear(); // los datos importados mandan
     try {
       state = { ...state, ...Object.fromEntries(PARTES.map((k) => [k, n[k]])) };
       for (const k of PARTES) await persistSeguro(k);
@@ -443,12 +528,14 @@ export const store = {
     return n;
   },
 
+  /** Borra fotos, datos, copias internas (bóveda) y API Key de este dispositivo. */
   async borrarTodo() {
-    Object.values(KEYS).forEach((k) => { try { localStorage.removeItem(k); } catch { /* */ } });
+    [...Object.values(KEYS), ...Object.values(META)].forEach((k) => { try { localStorage.removeItem(k); } catch { /* */ } });
     state = defaults();
     enIDB.clear();
+    refsSinCargar.clear();
     if (usarIDB) {
-      cola = cola.then(() => idb.vaciar()).catch((e) => console.error(e));
+      cola = cola.then(() => idb.vaciar()).then(() => idb.bovedaVaciar()).catch((e) => console.error(e));
     }
     emit('all');
     await cola;

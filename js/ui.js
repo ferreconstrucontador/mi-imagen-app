@@ -50,11 +50,10 @@ export function mostrarError(e, contexto = '') {
   if (e instanceof QuotaError) return toast(e.message, 'error', 6000);
   if (e instanceof GeminiError) {
     if (e.code === 'sin_key') {
-      return confirmar({
-        titulo: 'Falta tu API Key',
-        texto: 'Para usar el análisis con IA necesitas pegar tu API Key gratuita de Google AI Studio en Ajustes. Solo toma 2 minutos.',
-        ok: 'Ir a Ajustes',
-        cancelar: 'Ahora no',
+      return mostrarDialogo({
+        mensaje: 'Para usar el análisis con IA necesitas pegar tu API Key gratuita de Google AI Studio en Ajustes. Solo toma 2 minutos.',
+        textoConfirmar: 'Ir a Ajustes',
+        textoCancelar: 'Ahora no',
       }).then((ok) => { if (ok) window.MiImagen?.irA('ajustes'); });
     }
     return toast(e.message, 'error', 7000);
@@ -116,21 +115,78 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalStack.length) modalStack[modalStack.length - 1].cerrar();
 });
 
-export function confirmar({ titulo = '¿Estás segura?', texto = '', ok = 'Aceptar', cancelar = 'Cancelar', peligro = false } = {}) {
+/**
+ * Diálogo propio de MiImagenApp (reemplaza a confirm() y alert() del navegador,
+ * que muestran "ferreconstrucontador.github.io dice").
+ * Se registra como capa del historial: Atrás, Esc o tocar fuera = Cancelar.
+ * @returns {Promise<boolean>} true si la usuaria confirma (en alertas, siempre true).
+ */
+export function mostrarDialogo({
+  titulo = 'MiImagenApp',
+  mensaje = '',
+  textoConfirmar = 'Aceptar',
+  textoCancelar = 'Cancelar',
+  esAlerta = false,
+  peligro = false,
+} = {}) {
   return new Promise((resolve) => {
-    let resuelto = false;
-    const cont = h(`<div>
-      <p class="muted">${esc(texto)}</p>
-      <div class="btn-row end">
-        <button class="btn btn-ghost" data-r="0">${esc(cancelar)}</button>
-        <button class="btn ${peligro ? 'btn-danger' : 'btn-primary'}" data-r="1">${esc(ok)}</button>
-      </div></div>`);
-    const m = abrirModal({ titulo, contenido: cont, clase: 'modal-sm', onClose: () => { if (!resuelto) resolve(false); } });
-    $$('[data-r]', cont).forEach((b) => b.addEventListener('click', () => {
-      resuelto = true;
-      resolve(b.dataset.r === '1');
-      m.cerrar();
-    }));
+    const previo = document.activeElement;
+    const id = 'dlg-' + Math.random().toString(36).slice(2, 8);
+    const parrafos = String(mensaje).split(/\n{2,}/).map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('');
+    const el = h(`
+      <div class="dialogo-fondo${peligro ? ' es-peligro' : ''}">
+        <div class="dialogo" role="alertdialog" aria-modal="true" aria-labelledby="${id}-t" aria-describedby="${id}-m">
+          <header class="dialogo-head">
+            <img src="icons/icon-192.png" alt="" width="28" height="28">
+            <h2 id="${id}-t">${esc(titulo)}</h2>
+          </header>
+          <div class="dialogo-msg" id="${id}-m">${parrafos}</div>
+          <div class="dialogo-acciones">
+            ${esAlerta ? '' : `<button type="button" class="btn ${peligro ? 'btn-dlg-seguro' : 'btn-ghost'}" data-r="0">${esc(textoCancelar)}</button>`}
+            <button type="button" class="btn ${peligro ? 'btn-dlg-peligro' : 'btn-primary'}" data-r="1">${esc(textoConfirmar)}</button>
+          </div>
+        </div>
+      </div>`);
+    const valorCancelar = esAlerta; // una alerta cerrada cuenta como "entendido"
+    let cerrado = false;
+    // Quita el diálogo (también lo usa el botón/gesto Atrás).
+    const cerrarDom = (valor = valorCancelar) => {
+      if (cerrado) return;
+      cerrado = true;
+      el.classList.remove('open');
+      modalStack = modalStack.filter((m) => m !== api);
+      document.body.classList.toggle('modal-open', modalStack.length > 0);
+      setTimeout(() => el.remove(), 200);
+      if (previo && previo.isConnected && typeof previo.focus === 'function') previo.focus({ preventScroll: true });
+      resolve(valor);
+    };
+    const soltar = abrirCapa(() => cerrarDom(valorCancelar));
+    const terminar = (valor) => {
+      if (cerrado) return;
+      cerrarDom(valor);
+      soltar();
+    };
+    const api = { el, cerrar: () => terminar(valorCancelar) };
+    modalStack.push(api);
+
+    el.addEventListener('click', (ev) => { if (ev.target === el) terminar(valorCancelar); });
+    $$('[data-r]', el).forEach((b) => b.addEventListener('click', () => terminar(b.dataset.r === '1')));
+    // Mantiene el foco dentro del diálogo.
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Tab') return;
+      const botones = $$('button', el);
+      const i = botones.indexOf(document.activeElement);
+      const sig = ev.shiftKey ? (i <= 0 ? botones.length - 1 : i - 1) : (i === botones.length - 1 ? 0 : i + 1);
+      ev.preventDefault();
+      botones[sig].focus();
+    });
+
+    $('#modal-root').appendChild(el);
+    document.body.classList.add('modal-open');
+    requestAnimationFrame(() => el.classList.add('open'));
+    // En acciones destructivas el foco queda en Cancelar.
+    const foco = peligro && !esAlerta ? $('[data-r="0"]', el) : $('[data-r="1"]', el);
+    foco.focus({ preventScroll: true });
   });
 }
 
