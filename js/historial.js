@@ -16,11 +16,13 @@ export const idsCapas = () => capas.filter((c) => c.empujada).map((c) => c.id);
 export const hayCapas = () => capas.length > 0;
 export const ocupado = () => pendientes > 0;
 
+// Ejecuta las tareas en orden, una a la vez: si una inicia otro retroceso,
+// las demás esperan a que termine (así nunca se cruzan dos retrocesos).
 function liberar() {
-  if (pendientes > 0) return;
-  const tareas = alLiberar;
-  alLiberar = [];
-  tareas.forEach((fn) => { try { fn(); } catch (e) { console.error(e); } });
+  while (pendientes === 0 && alLiberar.length) {
+    const fn = alLiberar.shift();
+    try { fn(); } catch (e) { console.error(e); }
+  }
 }
 
 /** Ejecuta fn cuando terminen los retrocesos propios en curso. */
@@ -31,7 +33,7 @@ export function cuandoLibre(fn) {
 
 /** Retrocede n entradas sin que el enrutador lo trate como navegación. */
 export function retroceder(n, despues) {
-  if (despues) alLiberar.push(despues);
+  if (despues) alLiberar.unshift(despues); // la continuación va antes que lo que ya esperaba
   if (n <= 0) { liberar(); return; }
   pendientes++;
   history.go(-n);
@@ -67,12 +69,15 @@ export function abrirCapa(cerrarDom) {
     const i = capas.indexOf(capa);
     if (i < 0) { despues && cuandoLibre(despues); return; }
     capas.splice(i, 1);
-    const tope = history.state?.capas;
-    if (capa.empujada && Array.isArray(tope) && tope[tope.length - 1] === capa.id) {
-      retroceder(1, despues);
-    } else if (despues) {
-      cuandoLibre(despues);
-    }
+    // Si su entrada aún no se empujó, ya no se empujará (abrirCapa lo revisa).
+    if (!capa.empujada) { despues && cuandoLibre(despues); return; }
+    // Esperamos a que termine cualquier otro retroceso (p. ej. un diálogo que se
+    // acaba de cerrar encima) antes de revisar si su entrada es la de arriba.
+    cuandoLibre(() => {
+      const tope = history.state?.capas;
+      if (Array.isArray(tope) && tope[tope.length - 1] === capa.id) retroceder(1, despues);
+      else if (despues) despues();
+    });
   };
 }
 

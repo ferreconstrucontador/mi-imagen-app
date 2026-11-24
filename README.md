@@ -21,11 +21,15 @@ Es un sitio 100 % estático (HTML + CSS + JavaScript con módulos ES, sin compil
 ```
 index.html          Estructura de la app y metaetiquetas PWA
 manifest.json       Manifiesto de la PWA
-sw.js               Service worker (caché sin conexión; nunca guarda llamadas a Gemini)
+sw.js               Service worker aislado (cachés `miimagen-`, versión desde js/version.js; nunca guarda llamadas a Gemini)
+GAP.md              Reglas del ecosistema Aplicaciones GAP aplicadas a esta app
 css/styles.css      Estilos (crema, rosa empolvado, terracota, carbón y dorado)
 js/app.js           Enrutador, cabecera e instalación
 js/store.js         Persistencia (localStorage + fotos en IndexedDB), migración, normalización y respaldos
-js/imagedb.js       Acceso a la base de datos de fotos MiImagenDB
+js/version.js       Versión única de la app (la leen la página y el service worker)
+js/imagedb.js       Base MiImagenDB: fotos (imagenes) y copias internas (boveda)
+js/boveda.js        Doble Bóveda: copia interna diaria de los últimos 7 días
+js/respaldo.js      Respaldo .json (sin API Key) y aviso de respaldo cada 24 h
 js/gemini.js        Cliente REST de Gemini y prompts
 js/image.js         Compresión de imágenes con Canvas
 js/ui.js            Componentes de interfaz (modales, toasts, selector de fotos, chips)
@@ -47,7 +51,7 @@ python3 -m http.server 8080
 
 En el repositorio: **Settings → Pages → Deploy from a branch**, elige la rama y la carpeta `/ (root)`. Todas las rutas son relativas, así que funciona dentro de `https://usuario.github.io/mi-imagen-app/`.
 
-Al publicar cambios, sube `VERSION` en `sw.js` para que las usuarias reciban la nueva versión.
+Al publicar cambios, sube la versión en `js/version.js`: el service worker renombra su caché y las usuarias ven el aviso "Hay una versión nueva · Actualizar".
 
 ## API Key de Gemini
 
@@ -63,4 +67,6 @@ La clave se guarda solo en el `localStorage` del dispositivo y se envía únicam
 { "app": "MiImagenApp", "version": 1, "exportado": "ISO-8601",
   "data": { "profile": {}, "diagnostico": {}, "porComprar": [], "armario": [], "historial": [], "settings": {}, "apiKey": "" } }
 ```
-Al importar, `store.normalize()` rellena los campos que falten, así que los respaldos antiguos o parciales siguen funcionando.
+El archivo se descarga como `miimagen-respaldo-AAAA-MM-DD.json` y **nunca incluye la API Key** (`apiKey` siempre vacío). Al importar, `store.normalize()` rellena los campos que falten, así que los respaldos antiguos o parciales siguen funcionando, y se conserva la API Key del dispositivo.
+
+Además, la app guarda sola una **copia interna diaria** (últimos 7 días) en `MiImagenDB`, que se restaura desde Ajustes → Copias internas. Ver `GAP.md`.

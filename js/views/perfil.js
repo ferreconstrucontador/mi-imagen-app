@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { CLIMAS, ESTILOS, nombreClima } from '../constants.js';
 import { analizarDiagnostico } from '../gemini.js';
-import { $, $$, h, esc, toast, mostrarError, cargando, photoPicker, chipGroup, swatch, lista, fechaCorta, confirmar } from '../ui.js';
+import { $, $$, h, esc, toast, mostrarError, cargando, photoPicker, chipGroup, swatch, lista, fechaCorta, mostrarDialogo } from '../ui.js';
 
 let root;
 let pilarActivo = 'colorimetria';
@@ -69,6 +69,7 @@ export function mount(el) {
     </div>
 
     <div id="diagnostico"></div>
+    <p class="app-version">MiImagenApp · v${esc(self.MIIMAGEN_VERSION || '')}</p>
   `;
 
   const p = store.get().profile;
@@ -189,7 +190,15 @@ async function analizar() {
     form.querySelector(p.ciudad ? '[name=clima]' : '[name=ciudad]').focus();
     return;
   }
-  if (diagnostico && !(await confirmar({ titulo: 'Nuevo análisis', texto: 'Se reemplazará tu diagnóstico actual con uno nuevo. ¿Continuar?', ok: 'Sí, analizar' }))) return;
+  if (diagnostico) {
+    const est = diagnostico.data?.colorimetria?.estacion;
+    const ok = await mostrarDialogo({
+      mensaje: `Se reemplazará tu diagnóstico de 4 Pilares del ${fechaCorta(diagnostico.fecha)}${est ? ` (${est})` : ''} por uno nuevo, hecho con tus fotos y datos actuales.\n\nSi después quieres el anterior, puedes recuperarlo desde Ajustes → Copias internas.`,
+      textoConfirmar: 'Sí, analizar de nuevo',
+      peligro: true,
+    });
+    if (!ok) return;
+  }
 
   const fin = cargando([
     'Observando tu subtono de piel…',

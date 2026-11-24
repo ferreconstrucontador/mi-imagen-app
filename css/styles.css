@@ -687,6 +687,64 @@ details > summary::-webkit-details-marker { display: none; }
 .est-clima { background: var(--rosa-suave); border-radius: 10px; padding: 6px 10px; }
 @media (max-width: 400px) { .sug-list li { flex-wrap: wrap; } .sug-list .btn { margin-left: 28px; } }
 
+/* ---------- Diálogo propio (mostrarDialogo) ---------- */
+/* Sólo usa variables de :root, así sigue cualquier tema que se defina ahí. */
+.dialogo-fondo {
+  position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; padding: 20px;
+  background: rgba(43, 43, 46, .5); opacity: 0; transition: opacity .2s;
+}
+.dialogo-fondo.open { opacity: 1; }
+.dialogo {
+  width: min(100%, 400px); background: var(--marfil); color: var(--texto);
+  border-radius: 22px; border-top: 4px solid var(--dorado); box-shadow: var(--sombra-alta);
+  padding: 18px 20px 16px; transform: translateY(12px) scale(.98); transition: transform .2s ease;
+}
+.dialogo-fondo.open .dialogo { transform: none; }
+.dialogo-fondo.es-peligro .dialogo { border-top-color: var(--error); }
+.dialogo-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.dialogo-head img { border-radius: 8px; flex: none; }
+.dialogo-head h2 { font-family: var(--serif); font-size: 1.35rem; font-weight: 600; margin: 0; color: var(--carbon); }
+.dialogo-msg { font-size: .95rem; line-height: 1.5; }
+.dialogo-msg p { margin: 0 0 .7em; }
+.dialogo-acciones { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.dialogo-acciones .btn { min-width: 112px; }
+/* En acciones destructivas, Cancelar es la opción resaltada y Confirmar queda discreta. */
+.btn-dlg-seguro { background: var(--carbon); color: var(--marfil); }
+.btn-dlg-seguro:hover { background: #000; }
+.btn-dlg-peligro { background: transparent; color: var(--error); border-color: var(--error); }
+.btn-dlg-peligro:hover { background: var(--error-bg); }
+.dialogo .btn:focus-visible { outline: 3px solid var(--dorado); outline-offset: 2px; }
+@media (max-width: 380px) { .dialogo-acciones .btn { flex: 1 1 100%; } }
+
+/* ---------- Avisos discretos (respaldo y nueva versión) ---------- */
+.avisos {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 45;
+  bottom: calc(var(--nav-h) + var(--safe-b) + 10px); width: min(94vw, 480px);
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+@media (min-width: 760px) { .avisos { bottom: 96px; } }
+.aviso-banda {
+  pointer-events: auto; display: flex; align-items: center; gap: 10px;
+  background: var(--marfil); border: 1px solid var(--dorado-claro); border-left: 4px solid var(--dorado);
+  border-radius: 16px; padding: 8px 8px 8px 12px; box-shadow: var(--sombra-alta); font-size: .86rem;
+  opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s;
+}
+.aviso-banda.show { opacity: 1; transform: none; }
+.aviso-ico { font-size: 1.1rem; flex: none; }
+.aviso-txt { flex: 1; min-width: 0; line-height: 1.35; }
+.aviso-banda .btn { flex: none; }
+.aviso-banda .icon-btn { width: 36px; height: 36px; flex: none; }
+
+/* ---------- Copias internas (Doble Bóveda) ---------- */
+.boveda-lista { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
+.boveda-lista > li:not(.muted) { display: flex; align-items: center; gap: 10px; background: var(--crema); border: 1px solid var(--linea); border-radius: 14px; padding: 8px 10px 8px 12px; }
+.boveda-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.boveda-info b { font-weight: 500; font-size: .9rem; }
+.boveda-info small { font-size: .74rem; color: var(--muted); }
+.boveda-lista .btn { flex: none; }
+
+.app-version { text-align: center; font-size: .74rem; letter-spacing: .08em; color: var(--muted); margin: 22px 0 4px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

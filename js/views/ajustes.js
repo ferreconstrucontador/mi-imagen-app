@@ -1,10 +1,13 @@
-// Ajustes: API Key de Gemini, modelo, respaldos, almacenamiento e instalación.
+// Ajustes: API Key de Gemini, modelo, respaldos (.json y Doble Bóveda), almacenamiento e instalación.
 import { store } from '../store.js';
 import { MODELOS_SUGERIDOS, DEFAULT_MODEL, APP_NAME } from '../constants.js';
 import { validarApiKey } from '../gemini.js';
-import { $, $$, esc, toast, mostrarError, confirmar, descargar, fechaCorta, cargando } from '../ui.js';
+import { $, esc, toast, mostrarError, mostrarDialogo, fechaCorta, cargando } from '../ui.js';
+import { exportarRespaldo, nombreArchivo } from '../respaldo.js';
+import { listarCopias, restaurarCopia, fechaLocal, MAX_COPIAS } from '../boveda.js';
 
 let root;
+let escuchando = false;
 
 export function mount(el) {
   root = el;
@@ -58,14 +61,21 @@ export function mount(el) {
           <span><i class="sw-dot texto"></i><span id="storage-texto">Textos y ajustes</span></span>
         </div>
         <small id="storage-text"></small>
-        <button type="button" class="btn btn-sm btn-soft" id="btn-proteger" hidden>🔒 Proteger mis fotos en este dispositivo</button>
+        <button type="button" class="btn btn-sm btn-soft" id="btn-proteger">🛡️ Proteger mis datos en este dispositivo</button>
       </div>
       <ul class="stats-mini" id="stats-mini"></ul>
-      <label class="switch"><input type="checkbox" id="incluir-key"><span></span> Incluir mi API Key en el respaldo</label>
+      <p class="callout small">🔐 Por seguridad, el respaldo <b>no incluye tu API Key</b> de Gemini: se queda solo en este dispositivo. Al importar un respaldo, tu clave actual se conserva.</p>
+      <p class="muted small" id="ultimo-respaldo"></p>
       <div class="btn-row">
         <button class="btn btn-primary" id="btn-exportar">⬇️ Exportar respaldo (.json)</button>
         <label class="btn btn-soft">⬆️ Importar respaldo<input type="file" id="file-importar" accept="application/json,.json" hidden></label>
       </div>
+    </div>
+
+    <div class="card" id="boveda">
+      <h3 class="section-title">🗄️ Copias internas (últimos ${MAX_COPIAS} días)</h3>
+      <p class="muted small">Doble Bóveda: además de tus respaldos .json, la app guarda sola una copia al día dentro de este dispositivo, tomada la primera vez que la abres. Sirve para deshacer un error, aunque no hayas exportado nada. No incluye tu API Key y guarda las fotos en tamaño reducido para no ocupar espacio.</p>
+      <ul class="boveda-lista" id="boveda-lista"><li class="muted small">Cargando copias…</li></ul>
     </div>
 
     <div class="card">
@@ -88,11 +98,11 @@ export function mount(el) {
 
     <div class="card danger-zone">
       <h3 class="section-title">Zona delicada</h3>
-      <p class="muted small">Borra todas tus fotos, diagnóstico, listas, armario e historial de este dispositivo. No se puede deshacer.</p>
+      <p class="muted small">Borra todas tus fotos, diagnóstico, listas, armario, historial, copias internas y API Key de este dispositivo. No se puede deshacer.</p>
       <button class="btn btn-danger" id="btn-borrar-todo">Borrar todos mis datos</button>
     </div>
 
-    <p class="muted small center footer-note">${APP_NAME} · Hecho con 💖 · Tus datos nunca salen de tu dispositivo, excepto las consultas que tú envías a Google Gemini.</p>
+    <p class="muted small center footer-note">${APP_NAME} · v${esc(self.MIIMAGEN_VERSION || '')} · Hecho con 💖 · Tus datos nunca salen de tu dispositivo, excepto las consultas que tú envías a Google Gemini.</p>
   `;
 
   const inp = $('#api-key', el);
@@ -103,39 +113,52 @@ export function mount(el) {
   });
   $('#btn-guardar-key', el).addEventListener('click', guardarKey);
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') guardarKey(); });
-  $('#btn-borrar-key', el).addEventListener('click', async () => {
-    if (!store.get().apiKey) return;
-    if (await confirmar({ titulo: 'Quitar API Key', texto: 'La IA dejará de funcionar hasta que pegues una nueva clave.', ok: 'Quitar', peligro: true })) {
-      store.set('apiKey', '');
-      store.updateSettings({ apiKeyValidada: false });
-      inp.value = '';
-      pintarEstadoKey();
-    }
-  });
+  $('#btn-borrar-key', el).addEventListener('click', quitarKey);
   $('#modelo', el).addEventListener('change', (e) => {
     const v = e.target.value.trim() || DEFAULT_MODEL;
     e.target.value = v;
     try { store.updateSettings({ modelo: v, apiKeyValidada: false }); pintarEstadoKey(); toast('Modelo actualizado. Presiona “Guardar y validar” para comprobarlo.'); } catch (err) { mostrarError(err); }
   });
 
-  $('#btn-exportar', el).addEventListener('click', exportar);
+  $('#btn-exportar', el).addEventListener('click', () => { try { exportarRespaldo(); } catch (e) { mostrarError(e); } });
   $('#file-importar', el).addEventListener('change', importar);
   $('#btn-tour', el).addEventListener('click', () => window.MiImagen.iniciarTour());
   $('#btn-borrar-todo', el).addEventListener('click', borrarTodo);
-  document.addEventListener('mia:instalable', pintarInstalar);
+  $('#btn-proteger', el).addEventListener('click', proteger);
+  if (!escuchando) { // la vista se vuelve a montar al importar/borrar: registrar una sola vez
+    escuchando = true;
+    document.addEventListener('mia:instalable', pintarInstalar);
+    document.addEventListener('mia:respaldo', pintarUltimoRespaldo);
+  }
 
   pintarEstadoKey();
   pintarDatos();
   pintarInstalar();
+  pintarBoveda();
 }
 
-export function show() { pintarDatos(); pintarEstadoKey(); }
+export function show() { pintarDatos(); pintarEstadoKey(); pintarBoveda(); }
 export function onStore(part) {
   if (!root) return;
   if (part === 'all') { mount(root); return; }
   pintarDatos();
 }
 
+// ---------- Textos que describen exactamente qué hay ----------
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+
+function resumenActual() {
+  const s = store.get();
+  const partes = [];
+  if (s.profile.selfie || s.profile.cuerpo || s.profile.ciudad) partes.push('tu perfil y fotos base');
+  if (s.diagnostico) partes.push('tu diagnóstico de 4 Pilares');
+  partes.push(plural(s.armario.length, 'prenda del armario', 'prendas del armario'));
+  partes.push(plural(s.porComprar.length, 'artículo por comprar', 'artículos por comprar'));
+  partes.push(plural(s.historial.length, 'análisis del historial', 'análisis del historial'));
+  return partes.join(', ');
+}
+
+// ---------- API Key ----------
 function pintarEstadoKey(msg, tipo) {
   const st = $('#key-status', root);
   const s = store.get();
@@ -143,6 +166,21 @@ function pintarEstadoKey(msg, tipo) {
   if (!s.apiKey) { st.className = 'key-status warn'; st.textContent = '⚠️ Aún no has configurado tu API Key.'; return; }
   st.className = `key-status ${s.settings.apiKeyValidada ? 'ok' : 'info'}`;
   st.textContent = s.settings.apiKeyValidada ? `✅ Conectada con ${s.settings.modelo}. ¡Todo listo!` : 'API Key guardada (sin validar).';
+}
+
+async function quitarKey() {
+  const key = store.get().apiKey;
+  if (!key) return;
+  const ok = await mostrarDialogo({
+    mensaje: `Se quitará de este dispositivo la API Key de Gemini que termina en “…${key.slice(-4)}”.\n\nLos análisis con IA dejarán de funcionar hasta que pegues una clave nueva. Tus datos no se tocan.`,
+    textoConfirmar: 'Quitar API Key',
+    peligro: true,
+  });
+  if (!ok) return;
+  store.set('apiKey', '');
+  store.updateSettings({ apiKeyValidada: false });
+  $('#api-key', root).value = '';
+  pintarEstadoKey();
 }
 
 async function guardarKey() {
@@ -171,9 +209,11 @@ async function guardarKey() {
   }
 }
 
+// ---------- Datos e historial ----------
 function pintarDatos() {
   const s = store.get();
   pintarAlmacenamiento();
+  pintarUltimoRespaldo();
   $('#stats-mini', root).innerHTML = `
     <li><b>${s.profile.selfie ? '✓' : '—'}</b><span>Selfie</span></li>
     <li><b>${s.diagnostico ? '✓' : '—'}</b><span>Diagnóstico</span></li>
@@ -187,12 +227,35 @@ function pintarDatos() {
     <ul class="history-list compact">${hist.map((x) => `<li><span class="thumb-ph">${tipos[x.tipo] || '✨'}</span><span><b>${esc(x.titulo)}</b><small>${esc(x.resumen || '')} · ${fechaCorta(x.fecha)}</small></span>${x.puntuacion ? `<span class="mini-score">${x.puntuacion}</span>` : ''}</li>`).join('')}</ul>
     <button class="btn btn-sm btn-ghost" id="btn-limpiar-hist">Limpiar historial</button>`
     : '<p class="muted small">Todavía no hay análisis guardados.</p>';
-  $('#btn-limpiar-hist', root)?.addEventListener('click', async () => {
-    if (await confirmar({ titulo: 'Limpiar historial', texto: 'Se borrarán las evaluaciones y outfits guardados (tu diagnóstico, listas y armario se conservan).', ok: 'Limpiar', peligro: true })) {
-      store.set('historial', []);
-      toast('Historial limpio ✓');
-    }
+  $('#btn-limpiar-hist', root)?.addEventListener('click', limpiarHistorial);
+}
+
+async function limpiarHistorial() {
+  const h = store.get().historial;
+  const n = (t) => h.filter((x) => x.tipo === t).length;
+  const detalle = [
+    n('compra') && plural(n('compra'), 'evaluación de compra', 'evaluaciones de compra'),
+    n('outfits') && plural(n('outfits'), 'grupo de outfits', 'grupos de outfits'),
+    n('estilos') && plural(n('estilos'), 'exploración de estilos', 'exploraciones de estilos'),
+    n('diagnostico') && plural(n('diagnostico'), 'registro de diagnóstico', 'registros de diagnóstico'),
+  ].filter(Boolean).join(', ');
+  const ok = await mostrarDialogo({
+    mensaje: `Se borrarán ${plural(h.length, 'análisis guardado', 'análisis guardados')} del historial (${detalle}), con sus miniaturas.\n\nTu diagnóstico de 4 Pilares, tu armario y tu lista Por Comprar no se tocan.`,
+    textoConfirmar: 'Limpiar historial',
+    peligro: true,
   });
+  if (!ok) return;
+  store.set('historial', []);
+  toast('Historial limpio ✓');
+}
+
+function pintarUltimoRespaldo() {
+  const el = $('#ultimo-respaldo', root);
+  if (!el) return;
+  const { respaldo } = store.meta();
+  el.textContent = respaldo
+    ? `Último respaldo: ${new Date(respaldo).toLocaleString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · Se descarga como “${nombreArchivo()}”.`
+    : `Aún no has descargado ningún respaldo. Se descarga como “${nombreArchivo()}”.`;
 }
 
 // ---------- Medidor de espacio (navigator.storage.estimate) ----------
@@ -235,25 +298,21 @@ async function pintarAlmacenamiento() {
   if (!info.indexedDB) {
     $('#storage-text', root).textContent += ' ⚠️ Este navegador no permite la base de datos de fotos: se guardan en el almacenamiento básico (máx. ~5 MB).';
   }
-  const proteger = $('#btn-proteger', root);
-  proteger.hidden = !(info.persistente === false && navigator.storage?.persist);
-  proteger.onclick = async () => {
-    const ok = await store.protegerAlmacenamiento();
-    toast(ok ? 'Listo: el navegador no borrará tus fotos para liberar espacio 🔒' : 'Tu navegador no permitió la protección. Exporta respaldos con frecuencia.', ok ? 'ok' : 'warn', 5000);
-    pintarAlmacenamiento();
-  };
+  // Botón "Proteger mis datos": siempre visible, indica si ya están protegidos.
+  const btn = $('#btn-proteger', root);
+  const soportado = !!navigator.storage?.persist;
+  btn.hidden = !soportado;
+  btn.disabled = info.persistente === true;
+  btn.textContent = info.persistente === true ? '🛡️ Tus datos están protegidos en este dispositivo ✓' : '🛡️ Proteger mis datos en este dispositivo';
 }
 
-function exportar() {
-  try {
-    const incluir = $('#incluir-key', root).checked;
-    const data = store.exportar({ incluirApiKey: incluir });
-    const fecha = new Date().toISOString().slice(0, 10);
-    descargar(`MiImagenApp-respaldo-${fecha}.json`, JSON.stringify(data, null, 2));
-    toast('Respaldo descargado ✓', 'ok');
-  } catch (e) { mostrarError(e); }
+async function proteger() {
+  const ok = await store.protegerAlmacenamiento();
+  toast(ok ? 'Listo: el navegador no borrará tus datos para liberar espacio 🛡️' : 'Tu navegador no permitió la protección. Exporta respaldos con frecuencia.', ok ? 'ok' : 'warn', 5000);
+  pintarAlmacenamiento();
 }
 
+// ---------- Importar / borrar ----------
 async function importar(e) {
   const f = e.target.files?.[0];
   e.target.value = '';
@@ -262,12 +321,18 @@ async function importar(e) {
     const texto = await f.text();
     let json;
     try { json = JSON.parse(texto); } catch { throw new Error('El archivo no es un JSON válido.'); }
-    const d = json.data || json;
-    const resumen = `Perfil${d.diagnostico ? ', diagnóstico' : ''}, ${(d.armario || []).length} artículos de armario y ${(d.porComprar || []).length} por comprar.`;
-    const ok = await confirmar({
-      titulo: 'Importar respaldo',
-      texto: `Este respaldo${json.exportado ? ` del ${fechaCorta(json.exportado)}` : ''} contiene: ${resumen} Reemplazará los datos actuales de este dispositivo.`,
-      ok: 'Importar',
+    const d = json.data && typeof json.data === 'object' ? json.data : json;
+    const trae = [
+      d.profile && 'perfil',
+      d.diagnostico && 'diagnóstico',
+      plural((d.armario || []).length, 'prenda', 'prendas'),
+      plural((d.porComprar || []).length, 'artículo por comprar', 'artículos por comprar'),
+      plural((d.historial || []).length, 'análisis', 'análisis'),
+    ].filter(Boolean).join(', ');
+    const ok = await mostrarDialogo({
+      mensaje: `Se reemplazarán TODOS los datos actuales de este dispositivo (${resumenActual()}) por los del respaldo “${f.name}”${json.exportado ? ` del ${fechaCorta(json.exportado)}` : ''}, que trae: ${trae}.\n\nTu API Key se conserva. Si te equivocas, puedes volver al estado de hoy desde “Copias internas”.`,
+      textoConfirmar: 'Reemplazar con el respaldo',
+      peligro: true,
     });
     if (!ok) return;
     const fin = cargando(['Importando tu respaldo…', 'Guardando tus fotos…']);
@@ -279,12 +344,75 @@ async function importar(e) {
 }
 
 async function borrarTodo() {
-  const ok = await confirmar({ titulo: '¿Borrar todo?', texto: 'Se eliminarán tus fotos, diagnóstico, lista Por Comprar, armario, historial y API Key. Te recomendamos exportar un respaldo antes.', ok: 'Sí, borrar todo', peligro: true });
+  const ok = await mostrarDialogo({
+    mensaje: `Se borrarán para siempre de este dispositivo: ${resumenActual()}, las copias internas de los últimos ${MAX_COPIAS} días y tu API Key de Gemini.\n\nNo se puede deshacer. Te recomendamos exportar un respaldo .json antes.`,
+    textoConfirmar: 'Sí, borrar todo',
+    peligro: true,
+  });
   if (!ok) return;
   await store.borrarTodo();
   toast('Datos eliminados');
 }
 
+// ---------- Doble Bóveda ----------
+let turnoBoveda = 0;
+async function pintarBoveda() {
+  const turno = ++turnoBoveda;
+  const ul = $('#boveda-lista', root);
+  if (!ul) return;
+  if (!store.usaIndexedDB()) {
+    ul.innerHTML = '<li class="muted small">Este navegador no permite la base de datos interna, así que no hay copias automáticas. Exporta respaldos .json con frecuencia.</li>';
+    return;
+  }
+  let copias = [];
+  try { copias = await listarCopias(); } catch (e) { console.warn(e); }
+  if (turno !== turnoBoveda || !ul.isConnected) return;
+  if (!copias.length) {
+    ul.innerHTML = '<li class="muted small">Todavía no hay copias. La primera se crea sola en cuanto tengas datos y abras la app.</li>';
+    return;
+  }
+  const hoy = fechaLocal();
+  ul.innerHTML = copias.map((c) => {
+    const [a, m, d] = c.fecha.split('-').map(Number);
+    const texto = new Date(a, m - 1, d).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'short' });
+    const dia = texto.charAt(0).toUpperCase() + texto.slice(1); // "Martes 24 de nov"
+    const hora = c.creada ? new Date(c.creada).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '';
+    const r = c.resumen || {};
+    const det = [
+      plural(r.prendas || 0, 'prenda', 'prendas'),
+      plural(r.porComprar || 0, 'por comprar', 'por comprar'),
+      r.diagnostico ? `diagnóstico${r.estacion ? ` (${r.estacion})` : ''}` : 'sin diagnóstico',
+      formatoBytes(c.tamano),
+    ].join(' · ');
+    return `<li>
+      <span class="boveda-info"><b>${c.fecha === hoy ? 'Hoy · ' : ''}${esc(dia)}</b><small>Tomada a las ${esc(hora)} · ${esc(det)}</small></span>
+      <button type="button" class="btn btn-sm btn-soft" data-fecha="${esc(c.fecha)}" data-dia="${esc(dia)}">Restaurar</button>
+    </li>`;
+  }).join('');
+  ul.querySelectorAll('[data-fecha]').forEach((b) => b.addEventListener('click', () => restaurar(b.dataset.fecha, b.dataset.dia)));
+}
+
+async function restaurar(fecha, diaTitulo) {
+  const dia = diaTitulo.charAt(0).toLowerCase() + diaTitulo.slice(1); // va a mitad de frase
+  const copia = (await listarCopias()).find((c) => c.fecha === fecha);
+  if (!copia) { toast('Esa copia ya no existe.', 'warn'); pintarBoveda(); return; }
+  const r = copia.resumen || {};
+  const ok = await mostrarDialogo({
+    mensaje: `Se reemplazarán tus datos actuales (${resumenActual()}) por la copia interna del ${dia}, que tiene ${plural(r.prendas || 0, 'prenda', 'prendas')}, ${plural(r.porComprar || 0, 'artículo por comprar', 'artículos por comprar')} y ${r.diagnostico ? 'tu diagnóstico' : 'ningún diagnóstico'}.\n\nSe perderán los cambios hechos después de esa copia. Tu API Key se conserva. Las fotos que ya no estén en el dispositivo se recuperarán en tamaño reducido.`,
+    textoConfirmar: 'Restaurar esta copia',
+    peligro: true,
+  });
+  if (!ok) return;
+  const fin = cargando(['Restaurando tu copia interna…', 'Recuperando tus fotos…']);
+  try {
+    const { reducidas } = await restaurarCopia(fecha);
+    toast(`Copia del ${dia} restaurada ✓${reducidas ? ` (${plural(reducidas, 'foto recuperada', 'fotos recuperadas')} en tamaño reducido)` : ''}`, 'ok', 6000);
+  } catch (e) {
+    mostrarError(e);
+  } finally { fin(); }
+}
+
+// ---------- Instalación ----------
 function pintarInstalar() {
   const cont = $('#instalar', root);
   if (!cont) return;

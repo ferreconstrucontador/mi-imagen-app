@@ -4,7 +4,7 @@ import { CATEGORIAS, COLORES, OCASIONES, nombreCategoria, nombreColor, nombreOca
 import { detectarArticulo, generarOutfits, hayApiKey } from '../gemini.js';
 import { preseleccionar } from './estilos.js';
 import {
-  $, $$, h, esc, toast, mostrarError, abrirModal, confirmar, cargando, photoPicker, chipGroup,
+  $, $$, h, esc, toast, mostrarError, abrirModal, mostrarDialogo, cargando, photoPicker, chipGroup,
   selectColor, colorDot, opcionesOcasion, opcionesCategoria, fechaCorta, lista,
 } from '../ui.js';
 
@@ -172,7 +172,12 @@ function detalle(id) {
     window.MiImagen.irA('estilos');
   });
   $('[data-a="borrar"]', cont).addEventListener('click', async () => {
-    if (await confirmar({ titulo: 'Eliminar del armario', texto: `¿Eliminar “${it.nombre}” de tu armario?`, ok: 'Eliminar', peligro: true })) {
+    const enOutfits = store.get().historial.filter((x) => x.tipo === 'outfits' && x.resultado?.outfits?.some((o) => o.piezas?.includes(id))).length;
+    if (await mostrarDialogo({
+      mensaje: `Se eliminará “${it.nombre}” (${nombreCategoria(it.categoria)}) de tu armario${it.foto ? ', junto con su foto' : ''}.${enOutfits ? `\n\nAparece en ${enOutfits} grupo${enOutfits === 1 ? '' : 's'} de outfits guardados; ahí dejará de mostrarse.` : ''}`,
+      textoConfirmar: 'Eliminar prenda',
+      peligro: true,
+    })) {
       try { store.removeArmario(id); m.cerrar(); toast('Artículo eliminado'); } catch (e) { mostrarError(e); }
     }
   });

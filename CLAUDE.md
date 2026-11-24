@@ -1,7 +1,9 @@
 # CLAUDE.md — MiImagenApp
 
 PWA en español de asesoría de imagen personal femenina con Google Gemini IA.
-Lee también `README.md` para la descripción de funciones y la estructura de archivos.
+Lee también `README.md` para la descripción de funciones y la estructura de archivos, y
+**`GAP.md`** para las reglas del ecosistema Aplicaciones GAP (aislamiento del dominio
+compartido con otras apps, versión única, diálogos, Doble Bóveda y respaldos).
 
 ## Arquitectura (no cambiar sin pedirlo)
 
@@ -12,9 +14,12 @@ Lee también `README.md` para la descripción de funciones y la estructura de ar
 
 ## Reglas obligatorias
 
-### 1. Service worker: subir `VERSION` en cada cambio de la app
-- Cualquier cambio en archivos que la app sirve (HTML, CSS, JS, iconos, manifest) **debe subir `VERSION` en `sw.js`** (`miimagen-vX.Y.Z`), o las usuarias seguirán viendo la versión en caché.
+### 1. Versión única y service worker
+- La versión vive **sólo** en `js/version.js` (`self.MIIMAGEN_VERSION = 'X.Y.Z'`). `sw.js` la carga con `importScripts` y nombra su caché `miimagen-vX.Y.Z`; la página la muestra en el pie de Perfil y Ajustes. **Súbela en cada cambio de archivos que la app sirve** (HTML, CSS, JS, iconos, manifest), o las usuarias seguirán viendo la versión en caché. No escribas el número en ningún otro archivo.
+- `js/version.js` es un script clásico: sin `import`/`export`.
 - Todo archivo nuevo que use la app se agrega a la lista `SHELL` de `sw.js`.
+- **Aislamiento del dominio** (`ferreconstrucontador.github.io` también aloja MiFitApp y MiNutriApp): el SW sólo crea, lee y borra cachés con prefijo `miimagen-`, y busca respuestas en su propia caché (`caches.open(VERSION)`), nunca con `caches.match()` global.
+- No llames `skipWaiting()` al instalar: la versión nueva se activa cuando la usuaria toca el aviso "Hay una versión nueva · Actualizar".
 - Nunca cachear llamadas a `generativelanguage.googleapis.com`.
 
 ### 2. Nunca perder datos de las usuarias
@@ -23,7 +28,9 @@ Lee también `README.md` para la descripción de funciones y la estructura de ar
 - En `localStorage` cada foto se guarda como referencia `idb:<clave>`; en memoria siempre es un dataURL. Las vistas sólo trabajan con dataURL y **nunca acceden a `localStorage` ni a IndexedDB directamente**: todo pasa por `store` (`store.set`, `addArmario`, `updateProfile`, etc.).
 - Si cambia la forma de los datos, actualiza `normalize()` en `js/store.js` para que **los datos ya guardados y los respaldos antiguos se sigan leyendo**. No borres ni renombres llaves existentes sin migrarlas.
 - La migración de fotos de `localStorage` a IndexedDB (v1.4) se ejecuta en `store.iniciar()`: guarda primero las fotos y sólo después reescribe `localStorage`. Si IndexedDB no está disponible, las fotos se quedan en `localStorage`. Conserva ese orden y ese respaldo.
-- **Respaldos `.json`**: `store.exportar()` incluye las fotos como dataURL con el formato `{ app, version, exportado, data }`. `store.importar()` debe aceptar respaldos de **cualquier versión desde la v1.0**. No cambies este formato sin mantener la compatibilidad en ambos sentidos.
+- **Respaldos `.json`** (`miimagen-respaldo-AAAA-MM-DD.json`, ver `js/respaldo.js`): `store.exportar()` incluye las fotos como dataURL con el formato `{ app, version, exportado, data }` y **nunca la API Key**. `store.importar()` debe aceptar respaldos de **cualquier versión desde la v1.0** y conserva la API Key del dispositivo. No cambies este formato sin mantener la compatibilidad en ambos sentidos.
+- **Doble Bóveda** (`js/boveda.js`): copia interna diaria en el almacén `boveda` de `MiImagenDB` (7 más recientes, fotos reducidas, sin API Key). Al subir la versión de `MiImagenDB`, sólo **agrega** almacenes en `onupgradeneeded`; nunca borres `imagenes` ni `boveda`.
+- El aviso de respaldo aparece como máximo cada 24 h y sólo con actividad desde el último respaldo (`store.marcarActividad()` se llama solo al guardar datos de la usuaria).
 
 ### 3. Imágenes: compresión automática
 - **Toda imagen nueva se comprime antes de guardarse** con `compressImage()` de `js/image.js`: **máximo 800 px de ancho, JPEG calidad 0.7** (`MAX_WIDTH`, `JPEG_QUALITY`). Las miniaturas del historial usan `thumbnail()` (240 px).
@@ -41,6 +48,7 @@ Lee también `README.md` para la descripción de funciones y la estructura de ar
 - Para cambiar de pantalla usa **`irA(nombre)`** (`window.MiImagen.irA` desde las vistas). **No asignes `location.hash`**; los enlaces `<a href="#vista">` ya los intercepta el enrutador.
 - Pestañas de la barra inferior: `perfil`, `evaluar`, `comprar`, `armario`, `ajustes`. Las vistas secundarias (`estilos`, `ayuda`) se apilan sobre la pantalla de origen.
 - Todo modal se abre con `abrirModal()` de `js/ui.js` (u otra capa registrada con `abrirCapa()` de `js/historial.js`) para que el botón Atrás lo cierre primero.
+- **Confirmaciones y avisos**: usa siempre `mostrarDialogo({ mensaje, textoConfirmar, textoCancelar, esAlerta, peligro })` de `js/ui.js`. **Nunca** `window.confirm`, `window.alert` ni `window.prompt`. En acciones destructivas usa `peligro: true` (el foco queda en Cancelar) y di en el mensaje exactamente qué se borra o reemplaza.
 - La última pestaña visitada se guarda en `miimagen.ultimaPestana`.
 
 ### 6. Idioma y público
